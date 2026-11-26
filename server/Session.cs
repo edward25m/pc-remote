@@ -85,12 +85,14 @@ namespace PCRemote
                     {
                         var m = Json.Parse(Encoding.UTF8.GetString(p));
                         if (!Authorized) { Hello(m); continue; }
-                        try { Handle(m); }
-                        catch (Exception ex)
+                        string t = m.S("t");
+                        if (Slow.Contains(t))
                         {
-                            Program.Log("handle " + m.S("t") + ": " + ex.Message);
-                            SendSafe(M("error", "msg", ex.Message));
+                            // Things that can take a while (opening apps, listing drives, shutting down…) run on their own
+                            // so mouse and keyboard keep flowing and the connection never stalls.
+                            ThreadPool.QueueUserWorkItem(_ => SafeHandle(m));
                         }
+                        else SafeHandle(m);
                     }
                     else if (type == FrameIO.INPUT && Authorized && p.Length >= 1)
                     {
@@ -107,6 +109,18 @@ namespace PCRemote
             }
             catch (Exception ex) { if (!(ex is EndOfStreamException || ex is IOException)) Program.Log("session: " + ex.Message); }
             finally { Kill(); }
+        }
+
+        static readonly HashSet<string> Slow = new HashSet<string> { "ls", "open", "run", "run_app", "power", "stream", "clip", "mkdir", "ren" };
+
+        void SafeHandle(Dictionary<string, object> m)
+        {
+            try { Handle(m); }
+            catch (Exception ex)
+            {
+                Program.Log("handle " + m.S("t") + ": " + ex.Message);
+                SendSafe(M("error", "msg", ex.Message));
+            }
         }
 
         static short S16(byte[] p, int i) => (short)((p[i] << 8) | p[i + 1]);
@@ -339,6 +353,7 @@ namespace PCRemote
                 Fav("Music", Environment.SpecialFolder.MyMusic);
                 foreach (var d in DriveInfo.GetDrives())
                 {
+                    if (d.DriveType == DriveType.Network || d.DriveType == DriveType.CDRom || d.DriveType == DriveType.NoRootDirectory) continue;
                     if (!d.IsReady) continue;
                     string label = "";
                     try { label = d.VolumeLabel; } catch { }

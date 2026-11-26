@@ -38,8 +38,13 @@ public final class Discovery {
     public static void find(Context ctx, int timeoutMs, Callback cb) { find(ctx, timeoutMs, Prefs.connMode(ctx), cb); }
 
     /** mode: auto | wifi | hotspot */
-    public static void find(Context ctx, int timeoutMs, String mode, Callback cb) {
+    public static void find(Context ctx, int timeoutMs, String mode, Callback cb) { find(ctx, timeoutMs, mode, false, cb); }
+
+    /** stopEarly: finish as soon as a PC you've used before answers (makes auto-connect fast). */
+    public static void find(Context ctx, int timeoutMs, String mode, boolean stopEarly, Callback cb) {
         Context app = ctx.getApplicationContext();
+        java.util.Set<String> knownIds = new java.util.HashSet<>();
+        if (stopEarly) for (JSONObject k : Prefs.pcs(app)) knownIds.add(k.optString("id"));
         Handler main = new Handler(Looper.getMainLooper());
         new Thread(() -> {
             Map<String, JSONObject> found = new LinkedHashMap<>();
@@ -83,6 +88,7 @@ public final class Discovery {
                         o.put("ip", p.getAddress().getHostAddress());
                         o.put("via", rs == wifiSock ? "wifi" : (Net.wifi(app) != null && !"hotspot".equals(mode) && onWifiSubnet(app, p.getAddress()) ? "wifi" : "hotspot"));
                         found.put(o.optString("id"), o);
+                        if (knownIds.contains(o.optString("id"))) end = 0; // got one we know: done
                     } catch (java.net.SocketTimeoutException ignored) {
                     } catch (Exception ignored) {}
                 }
@@ -230,7 +236,7 @@ public final class Discovery {
             return;
         }
 
-        find(c, 2200, mode, found -> {
+        find(c, 2500, mode, true, found -> {
             if (conn.state != Conn.IDLE) { seen.onFound(found); return; }
             for (JSONObject k : known) {
                 for (JSONObject f : found) {
@@ -249,7 +255,8 @@ public final class Discovery {
             }
             if (!known.isEmpty() && found.isEmpty()) {
                 JSONObject last = known.get(0);
-                if (!last.optString("ip").isEmpty()) {
+                if (!last.optString("ip").isEmpty() && System.currentTimeMillis() - lastDirectTry > 20000) {
+                    lastDirectTry = System.currentTimeMillis();
                     // not found by searching: try its last address directly anyway
                     String how = "hotspot".equals(mode) ? "hotspot" : "wifi".equals(mode) ? "wifi"
                             : (Net.wifi(c) != null ? "wifi" : "hotspot");
@@ -269,6 +276,17 @@ public final class Discovery {
             seen.onFound(found);
         });
     }
+
+    /** Marks whether a PC (e.g. from an announcement) is on the Wi-Fi network or on this phone's hotspot. */
+    public static JSONObject classify(Context c, JSONObject o) {
+        try {
+            InetAddress a = InetAddress.getByName(o.optString("ip"));
+            o.put("via", Net.wifi(c) != null && onWifiSubnet(c, a) ? "wifi" : "hotspot");
+        } catch (Exception ignored) {}
+        return o;
+    }
+
+    private static long lastDirectTry = 0;
 
     /** Which link a found PC is on. */
     public static String how(String mode, JSONObject found) {

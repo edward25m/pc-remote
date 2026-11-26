@@ -30,20 +30,33 @@ public abstract class BaseActivity extends Activity implements Conn.Listener {
     @Override protected void onResume() {
         super.onResume();
         conn.addListener(this);
-        if (needsConnection && conn.state == Conn.IDLE) finish();
+        Watcher.screenShown(this);
+        if (needsConnection && conn.state == Conn.IDLE && !Watcher.reconnecting()) finish();
     }
 
     @Override protected void onPause() {
         conn.removeListener(this);
+        Watcher.screenHidden();
         super.onPause();
     }
 
     @Override public void onState(int s) {
         if (needsConnection && s == Conn.IDLE) {
-            Ui.toast(this, conn.error.isEmpty() ? "Disconnected from the PC" : conn.error);
-            finish();
+            if (Watcher.reconnecting()) {
+                // stay on this screen: it works again as soon as the connection is back
+                if (!toldReconnecting) { toldReconnecting = true; Ui.toast(this, "Connection dropped. Reconnecting…"); }
+            } else {
+                Ui.toast(this, conn.error.isEmpty() ? "Disconnected from the PC" : conn.error);
+                finish();
+            }
         }
+        if (s == Conn.CONNECTED && toldReconnecting) { toldReconnecting = false; Ui.toast(this, "Reconnected"); onReconnected(); }
     }
+
+    private boolean toldReconnecting;
+
+    /** Screens that stream something (screen view, file list) restart it here. */
+    protected void onReconnected() {}
 
     @Override public void onMessage(String t, JSONObject m) {
         if (t.equals("error")) Ui.toast(this, m.optString("msg"));

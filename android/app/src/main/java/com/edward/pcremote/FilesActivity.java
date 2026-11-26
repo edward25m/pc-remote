@@ -70,6 +70,8 @@ public class FilesActivity extends BaseActivity {
         list("");
     }
 
+    @Override protected void onReconnected() { list(path); }
+
     private void list(String p) {
         empty.setText("Loading…");
         empty.setVisibility(View.VISIBLE);

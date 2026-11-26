@@ -103,6 +103,12 @@ public class ScreenActivity extends BaseActivity {
         conn.send(Conn.msg("fr"));
     }
 
+    @Override protected void onReconnected() {
+        conn.send(Conn.msg("scr_start", "w", QUALITY[q][0], "q", QUALITY[q][1]));
+        conn.send(Conn.msg("fr"));
+        conn.send(Conn.msg("fr"));
+    }
+
     @Override protected void onPause() {
         conn.frameSink = null;
         conn.send(Conn.msg("scr_stop"));

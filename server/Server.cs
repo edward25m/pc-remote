@@ -84,6 +84,60 @@ namespace PCRemote
             StartThread(DiscoveryLoop, "udp");
             StartThread(BluetoothLoop, "bt");
             StartThread(MediaHttp.Loop, "http");
+            StartThread(AnnounceLoop, "announce");
+            System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged += (s, e) => announceBurst = 20;
+        }
+
+        public const int AnnouncePort = 47803;
+        static volatile int announceBurst = 60;
+
+        /// Tells phones "I'm here" (on start-up and whenever the network changes, then every few seconds),
+        /// so an open phone app connects within a second of the PC coming on.
+        static void AnnounceLoop()
+        {
+            using (var u = new UdpClient())
+            {
+                u.EnableBroadcast = true;
+                while (true)
+                {
+                    var msg = Encoding.UTF8.GetBytes(Json.Str(new Dictionary<string, object> {
+                        { "t", "pc" }, { "id", Config.Data.Id }, { "name", Config.Data.Name },
+                        { "port", TcpPort }, { "ver", Program.Version }, { "bt", BtAddress }
+                    }));
+                    foreach (var addr in BroadcastAddresses())
+                    {
+                        try { u.Send(msg, msg.Length, new IPEndPoint(addr, AnnouncePort)); } catch { }
+                    }
+                    bool busy = Sessions.Count > 0;
+                    if (announceBurst > 0) { announceBurst--; Thread.Sleep(1000); }
+                    else Thread.Sleep(busy ? 15000 : 4000);
+                }
+            }
+        }
+
+        static List<IPAddress> BroadcastAddresses()
+        {
+            var list = new List<IPAddress> { IPAddress.Broadcast };
+            try
+            {
+                foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (ni.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
+                    if (ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Loopback) continue;
+                    foreach (var ua in ni.GetIPProperties().UnicastAddresses)
+                    {
+                        if (ua.Address.AddressFamily != AddressFamily.InterNetwork || ua.IPv4Mask == null) continue;
+                        var ip = ua.Address.GetAddressBytes();
+                        var mask = ua.IPv4Mask.GetAddressBytes();
+                        var b = new byte[4];
+                        for (int i = 0; i < 4; i++) b[i] = (byte)(ip[i] | ~mask[i]);
+                        var ba = new IPAddress(b);
+                        if (!list.Contains(ba)) list.Add(ba);
+                    }
+                }
+            }
+            catch { }
+            return list;
         }
 
         static void StartThread(ThreadStart f, string name)

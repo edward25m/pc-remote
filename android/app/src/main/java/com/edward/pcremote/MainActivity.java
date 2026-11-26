@@ -24,8 +24,6 @@ public class MainActivity extends BaseActivity {
     private TextView pcName, status, actionBtn, updateBanner;
     private final List<View> tiles = new ArrayList<>();
     private final TextView[] modeViews = new TextView[MODES.length];
-    private static boolean manualDisconnect = false;
-    private static boolean searching = false;
     private static long lastUpdateCheck = 0;
     private static boolean pickerShown = false;
     private boolean night;
@@ -152,10 +150,9 @@ public class MainActivity extends BaseActivity {
         if (m.equals("bt") && Build.VERSION.SDK_INT >= 31 && !Discovery.hasBtPermission(this)) {
             requestPermissions(new String[]{android.Manifest.permission.BLUETOOTH_CONNECT}, 1);
         }
-        manualDisconnect = false;
         if (conn.state != Conn.IDLE) conn.disconnect();
         conn.error = "";
-        search();
+        Watcher.connectNow(this);
     }
 
     private void askPermissions() {
@@ -169,14 +166,22 @@ public class MainActivity extends BaseActivity {
 
     @Override public void onRequestPermissionsResult(int rc, String[] perms, int[] res) {
         super.onRequestPermissionsResult(rc, perms, res);
-        if (conn.state == Conn.IDLE && !manualDisconnect) search();
+        if (conn.state == Conn.IDLE && !conn.autoPaused) Watcher.connectNow(this);
     }
 
     @Override protected void onResume() {
         super.onResume();
         if (night != Prefs.sp(this).getBoolean("night", false)) { recreate(); return; }
         render();
-        if (conn.state == Conn.IDLE && !manualDisconnect) search();
+        // Searching and reconnecting run automatically while the app is open (see Watcher).
+        if (Prefs.pcs(this).isEmpty() && !pickerShown) {
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                if (!isFinishing() && conn.state == Conn.IDLE && Prefs.pcs(this).isEmpty() && !pickerShown) {
+                    pickerShown = true;
+                    startActivity(new Intent(this, PickerActivity.class).putExtra("first", true));
+                }
+            }, 4000);
+        }
         long now = System.currentTimeMillis();
         if (now - lastUpdateCheck > 6 * 3600 * 1000L) {
             lastUpdateCheck = now;
@@ -189,29 +194,9 @@ public class MainActivity extends BaseActivity {
         }
     }
 
-    private void search() {
-        if (searching) return;
-        searching = true;
-        conn.error = "";
-        render();
-        Discovery.autoConnect(this, found -> {
-            searching = false;
-            if (conn.state == Conn.IDLE && Prefs.pcs(this).isEmpty() && !isFinishing() && !pickerShown) {
-                pickerShown = true;
-                startActivity(new Intent(this, PickerActivity.class).putExtra("first", true));
-            }
-            render();
-        });
-    }
-
     private void onAction() {
-        if (conn.state == Conn.IDLE) {
-            manualDisconnect = false;
-            search();
-        } else {
-            manualDisconnect = true;
-            conn.disconnect();
-        }
+        if (conn.state == Conn.IDLE) Watcher.connectNow(this);
+        else conn.disconnect();
         render();
     }
 
@@ -230,21 +215,19 @@ public class MainActivity extends BaseActivity {
             case Conn.CONNECTING: s = conn.stage.isEmpty() ? "Connecting over " + conn.transportLabel() + "…" : conn.stage; break;
             case Conn.WAITING: s = "Click \"Allow\" on the PC to finish connecting"; break;
             default:
-                if (searching) s = "Looking for your PC…";
-                else if (!conn.error.isEmpty()) s = conn.error;
-                else if (manualDisconnect) s = "Disconnected";
+                if (Watcher.reconnecting()) s = "Connection dropped. Reconnecting…";
+                else if (Watcher.searching && conn.error.isEmpty()) s = "Looking for your PC…";
+                else if (!conn.error.isEmpty()) s = conn.error + (conn.autoPaused ? "" : "  (still looking…)");
+                else if (conn.autoPaused) s = "Disconnected";
                 else s = "Not connected. Is PC Remote running on the PC?";
         }
         status.setText(s);
         status.setTextColor(conn.state == Conn.CONNECTED ? Ui.ON : Ui.MUTED);
-        actionBtn.setText(conn.state == Conn.IDLE ? (searching ? "Searching…" : "Connect") : "Disconnect");
+        actionBtn.setText(conn.state == Conn.IDLE ? (conn.autoPaused ? "Connect" : "Searching…") : "Disconnect");
         for (View t : tiles) t.setAlpha(conn.isConnected() ? 1f : 0.45f);
     }
 
-    @Override public void onState(int s) {
-        if (s == Conn.CONNECTED) manualDisconnect = false;
-        render();
-    }
+    @Override public void onState(int s) { render(); }
 
     @Override public void onMessage(String t, JSONObject m) { }
 }

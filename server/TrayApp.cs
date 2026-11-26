@@ -33,6 +33,8 @@ namespace PCRemote
             }) { Checked = Autostart.IsOn() };
             var update = new ToolStripMenuItem("Check for updates", null, (s, e) => new Thread(() => Updater.CheckInteractive()) { IsBackground = true }.Start());
             var help = new ToolStripMenuItem("How to connect…", null, (s, e) => ShowHelp());
+            var admin = new ToolStripMenuItem("Admin mode (control admin windows && UAC prompts)…", null, (s, e) => Admin.Toggle())
+            { Checked = Admin.IsElevated() };
             var fix = new ToolStripMenuItem("Fix connection problems", null, (s, e) => new Thread(() =>
             {
                 Firewall.Ensure();
@@ -42,7 +44,7 @@ namespace PCRemote
             }) { IsBackground = true }.Start());
             var folder = new ToolStripMenuItem("Open log folder", null, (s, e) => { try { System.Diagnostics.Process.Start(Config.Dir); } catch { } });
             var exit = new ToolStripMenuItem("Exit", null, (s, e) => { icon.Visible = false; Environment.Exit(0); });
-            menu.Items.AddRange(new ToolStripItem[] { title, status, new ToolStripSeparator(), rename, allowedMenu, autostart, update, fix, help, folder, new ToolStripSeparator(), exit });
+            menu.Items.AddRange(new ToolStripItem[] { title, status, new ToolStripSeparator(), rename, allowedMenu, autostart, admin, update, fix, help, folder, new ToolStripSeparator(), exit });
             menu.Opening += (s, e) => { RefreshAllowed(); autostart.Checked = Autostart.IsOn(); };
 
             icon = new NotifyIcon { Icon = Program.AppIcon(), Text = "PC Remote", ContextMenuStrip = menu, Visible = true };

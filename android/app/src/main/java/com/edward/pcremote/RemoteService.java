@@ -27,7 +27,7 @@ public class RemoteService extends Service {
     private static RemoteService running;
     private MediaSession session;
     private final Conn.Listener listener = new Conn.Listener() {
-        @Override public void onState(int s) { if (s == Conn.IDLE) stopSelf(); else refresh(); }
+        @Override public void onState(int s) { if (s == Conn.IDLE && !Watcher.reconnecting()) stopSelf(); else refresh(); }
     };
 
     public static void refresh(Context c) {
@@ -53,7 +53,7 @@ public class RemoteService extends Service {
         if (Build.VERSION.SDK_INT >= 29) startForeground(NOTE_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
         else startForeground(NOTE_ID, n);
         updateVolumeSession();
-        if (!Conn.get().isConnected() && Conn.get().state == Conn.IDLE) stopSelf();
+        if (Conn.get().state == Conn.IDLE && !Watcher.reconnecting()) stopSelf();
         return START_NOT_STICKY;
     }
 
@@ -89,7 +89,8 @@ public class RemoteService extends Service {
 
         Intent open = new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         String how = conn.isWifi() ? "Wi-Fi" : "Bluetooth";
-        String title = conn.state == Conn.CONNECTED ? conn.pcName() + " · " + how : "Connecting…";
+        String title = conn.state == Conn.CONNECTED ? conn.pcName() + " · " + how
+                : Watcher.reconnecting() ? "Reconnecting to " + conn.pcName() + "…" : "Connecting…";
 
         Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, CHANNEL) : new Notification.Builder(this);
         b.setSmallIcon(R.drawable.ic_stat)

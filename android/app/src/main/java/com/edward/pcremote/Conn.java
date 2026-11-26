@@ -73,11 +73,23 @@ public final class Conn {
     private volatile long lastRx;
     private boolean userDisconnected;
 
+    private final Handler watch;
+
     private Conn() {
         HandlerThread t = new HandlerThread("conn-writer");
         t.start();
         writer = new Handler(t.getLooper());
+        // The "is the PC still there?" check runs on its own thread, so a stuck network write can't freeze it.
+        HandlerThread w = new HandlerThread("conn-watch");
+        w.start();
+        watch = new Handler(w.getLooper());
     }
+
+    /** User pressed Disconnect: don't reconnect automatically until they connect again. */
+    public volatile boolean autoPaused = false;
+
+    /** Ask screens to redraw (e.g. when searching starts/stops). */
+    public void refreshUi() { int s = state; main.post(() -> { for (Listener l : listeners) l.onState(s); }); }
 
     public void init(Context c) { if (app == null) app = c.getApplicationContext(); }
 
@@ -107,6 +119,7 @@ public final class Conn {
         transport = how;
         error = "";
         userDisconnected = false;
+        autoPaused = false;
         stage = "bluetooth".equals(how) ? "Connecting over Bluetooth…"
                 : "Reaching " + target.optString("name", "the PC") + " at " + target.optString("ip") + "…";
         setState(CONNECTING);
@@ -154,7 +167,7 @@ public final class Conn {
             stage = "Reached " + target.optString("name", "the PC") + ", waiting for it to answer…";
             setState(CONNECTING);
             // If the PC program doesn't answer within 8 s, stop waiting and say so.
-            writer.postDelayed(() -> {
+            watch.postDelayed(() -> {
                 if (gen == generation && state == CONNECTING) {
                     error = "Reached " + target.optString("name", "the PC") + " but PC Remote on it didn't answer. On the PC, right-click the "
                             + "PC Remote icon near the clock → Exit, then open PC Remote again from the Start menu.";
@@ -166,6 +179,7 @@ public final class Conn {
         } catch (Exception e) {
             if (gen != generation) return;
             String msg = e.getMessage() == null ? e.toString() : e.getMessage();
+            if (state == CONNECTED && !userDisconnected) error = "Connection lost. Reconnecting…";
             if (state == CONNECTING) {
                 String name = target.optString("name", "the PC");
                 if ("bluetooth".equals(how))
@@ -177,8 +191,6 @@ public final class Conn {
                             + ". If it is, on the PC: tray icon → Fix connection problems.";
                 else
                     error = "Couldn't reach " + name + ". Is it on and on the same Wi-Fi/hotspot?";
-            } else if (!userDisconnected) {
-                error = "Connection lost.";
             }
             android.util.Log.w("PCRemote", "connection: " + msg);
             closeSocket(gen);
@@ -260,20 +272,21 @@ public final class Conn {
     }
 
     private void schedulePing(int gen) {
-        writer.postDelayed(() -> {
+        watch.postDelayed(() -> {
             if (gen != generation || state != CONNECTED) return;
-            if (System.currentTimeMillis() - lastRx > 16000) {
-                error = "Connection lost.";
+            if (System.currentTimeMillis() - lastRx > 11000) {
+                error = "Connection lost. Reconnecting…";
                 closeSocket(gen);
                 return;
             }
             send(msg("ping"));
             schedulePing(gen);
-        }, 5000);
+        }, 3000);
     }
 
     public void disconnect() {
         userDisconnected = true;
+        autoPaused = true;
         error = "";
         closeSocket(generation);
     }
@@ -282,23 +295,33 @@ public final class Conn {
         synchronized (this) { generation++; }
         Closeable s = socket;
         socket = null;
-        try { if (s != null) s.close(); } catch (Exception ignored) {}
         out = null;
+        closeInBackground(s);
+    }
+
+    /** Closing a Bluetooth socket can take seconds, so it never happens on the screen's thread. */
+    private static void closeInBackground(Closeable s) {
+        if (s == null) return;
+        new Thread(() -> { try { s.close(); } catch (Exception ignored) {} }, "conn-close").start();
     }
 
     private void closeSocket(int gen) {
+        boolean wasConnected;
         synchronized (this) {
             if (gen != generation) return;
             generation++;
+            wasConnected = state == CONNECTED;
         }
         Closeable s = socket;
         socket = null;
         out = null;
-        try { if (s != null) s.close(); } catch (Exception ignored) {}
+        closeInBackground(s);
         Transfers.onDisconnected();
         lockWifi(false);
+        stage = "";
         setState(IDLE);
-        main.post(() -> { try { app.stopService(new Intent(app, RemoteService.class)); } catch (Exception ignored) {} });
+        boolean lost = wasConnected && !userDisconnected;
+        main.post(() -> Watcher.onClosed(lost));
     }
 
     // ---------------------------------------------------------------- sending
@@ -316,7 +339,7 @@ public final class Conn {
                 return true;
             } catch (IOException e) {
                 int g = generation;
-                main.post(() -> { if (state != IDLE) { error = "Connection lost."; closeSocket(g); } });
+                main.post(() -> { if (state != IDLE) { error = "Connection lost. Reconnecting…"; closeSocket(g); } });
                 return false;
             }
         }
