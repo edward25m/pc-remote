@@ -227,7 +227,7 @@ public class MainActivity extends BaseActivity {
         String s;
         switch (conn.state) {
             case Conn.CONNECTED: s = "● Connected over " + conn.transportLabel(); break;
-            case Conn.CONNECTING: s = "Connecting over " + conn.transportLabel() + "…"; break;
+            case Conn.CONNECTING: s = conn.stage.isEmpty() ? "Connecting over " + conn.transportLabel() + "…" : conn.stage; break;
             case Conn.WAITING: s = "Click \"Allow\" on the PC to finish connecting"; break;
             default:
                 if (searching) s = "Looking for your PC…";

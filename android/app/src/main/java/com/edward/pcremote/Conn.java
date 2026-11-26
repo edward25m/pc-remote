@@ -62,6 +62,8 @@ public final class Conn {
     public volatile String transport = "";
     public volatile int screenW = 1920, screenH = 1080;
     public volatile String pcVersion = "";
+    /** What the connection is doing right now, shown on the home screen while connecting. */
+    public volatile String stage = "";
     public volatile FrameSink frameSink;
     public static volatile String lastClip = null;
 
@@ -105,6 +107,8 @@ public final class Conn {
         transport = how;
         error = "";
         userDisconnected = false;
+        stage = "bluetooth".equals(how) ? "Connecting over Bluetooth…"
+                : "Reaching " + target.optString("name", "the PC") + " at " + target.optString("ip") + "…";
         setState(CONNECTING);
         new Thread(() -> open(gen, target, how), "conn-open").start();
     }
@@ -147,6 +151,16 @@ public final class Conn {
             hello.put("name", Prefs.deviceName(app));
             hello.put("clip", Prefs.clipSync(app));
             writeFrame(JSON, hello.toString().getBytes(StandardCharsets.UTF_8));
+            stage = "Reached " + target.optString("name", "the PC") + ", waiting for it to answer…";
+            setState(CONNECTING);
+            // If the PC program doesn't answer within 8 s, stop waiting and say so.
+            writer.postDelayed(() -> {
+                if (gen == generation && state == CONNECTING) {
+                    error = "Reached " + target.optString("name", "the PC") + " but PC Remote on it didn't answer. On the PC, right-click the "
+                            + "PC Remote icon near the clock → Exit, then open PC Remote again from the Start menu.";
+                    closeSocket(gen);
+                }
+            }, 8000);
 
             readLoop(gen, new DataInputStream(new BufferedInputStream(in, 256 * 1024)));
         } catch (Exception e) {
