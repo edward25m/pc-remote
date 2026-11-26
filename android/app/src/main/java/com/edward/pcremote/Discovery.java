@@ -35,12 +35,15 @@ public final class Discovery {
 
     private Discovery() {}
 
-    public static void find(int timeoutMs, Callback cb) {
+    public static void find(Context ctx, int timeoutMs, Callback cb) {
+        Context app = ctx.getApplicationContext();
         Handler main = new Handler(Looper.getMainLooper());
         new Thread(() -> {
             Map<String, JSONObject> found = new LinkedHashMap<>();
             try (DatagramSocket s = new DatagramSocket()) {
                 s.setBroadcast(true);
+                java.net.DatagramSocket wifiSock = null;
+                if (Net.wifi(app) != null) { wifiSock = new java.net.DatagramSocket(); wifiSock.setBroadcast(true); Net.bind(app, wifiSock); wifiSock.setSoTimeout(1); }
                 s.setSoTimeout(250);
                 byte[] q = "PCREMOTE?".getBytes(StandardCharsets.UTF_8);
                 Set<InetAddress> targets = broadcastAddresses();
@@ -51,12 +54,14 @@ public final class Discovery {
                     if (System.currentTimeMillis() >= nextSend) {
                         for (InetAddress a : targets) {
                             try { s.send(new DatagramPacket(q, q.length, a, PORT)); } catch (Exception ignored) {}
+                            if (wifiSock != null) try { wifiSock.send(new DatagramPacket(q, q.length, a, PORT)); } catch (Exception ignored) {}
                         }
                         nextSend = System.currentTimeMillis() + 500;
                     }
+                    for (java.net.DatagramSocket rs : wifiSock == null ? new java.net.DatagramSocket[]{s} : new java.net.DatagramSocket[]{s, wifiSock})
                     try {
                         DatagramPacket p = new DatagramPacket(buf, buf.length);
-                        s.receive(p);
+                        rs.receive(p);
                         JSONObject o = new JSONObject(new String(p.getData(), 0, p.getLength(), StandardCharsets.UTF_8));
                         if (!"pc".equals(o.optString("t"))) continue;
                         o.put("ip", p.getAddress().getHostAddress());
@@ -64,6 +69,7 @@ public final class Discovery {
                     } catch (java.net.SocketTimeoutException ignored) {
                     } catch (Exception ignored) {}
                 }
+                if (wifiSock != null) wifiSock.close();
             } catch (Exception ignored) {}
             List<JSONObject> l = new ArrayList<>(found.values());
             main.post(() -> cb.onFound(l));
@@ -123,7 +129,7 @@ public final class Discovery {
      */
     public static void autoConnect(Context c, Callback seen) {
         Conn conn = Conn.get();
-        find(1600, found -> {
+        find(c, 1600, found -> {
             if (conn.state != Conn.IDLE) { seen.onFound(found); return; }
             List<JSONObject> known = Prefs.pcs(c);
             for (JSONObject k : known) {

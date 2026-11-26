@@ -14,6 +14,7 @@ public abstract class BaseActivity extends Activity implements Conn.Listener {
     protected Conn conn;
     /** Screens that need a connection close themselves when it drops. */
     protected boolean needsConnection = true;
+    private static long lastClipTs = -1;
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
@@ -61,6 +62,13 @@ public abstract class BaseActivity extends Activity implements Conn.Listener {
         if (hasFocus && conn.isConnected() && Prefs.clipSync(this)) {
             try {
                 ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                // only read when something new was copied (reading shows Android's "pasted" message)
+                android.content.ClipDescription desc = cm.getPrimaryClipDescription();
+                if (desc == null) return;
+                long ts = android.os.Build.VERSION.SDK_INT >= 26 ? desc.getTimestamp() : 0;
+                if (ts != 0 && ts == lastClipTs) return;
+                lastClipTs = ts;
+                if (!desc.hasMimeType("text/*")) return;
                 ClipData cd = cm.getPrimaryClip();
                 if (cd != null && cd.getItemCount() > 0) {
                     CharSequence s = cd.getItemAt(0).coerceToText(this);

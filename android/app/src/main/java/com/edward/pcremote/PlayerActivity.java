@@ -24,6 +24,7 @@ public class PlayerActivity extends Activity {
         root.addView(title, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
         setContentView(root);
 
+        Net.bindProcess(this, true);
         MediaController mc = new MediaController(this);
         mc.setAnchorView(vv);
         vv.setMediaController(mc);
@@ -35,5 +36,10 @@ public class PlayerActivity extends Activity {
             return true;
         });
         vv.setOnCompletionListener(mp -> mc.show(0));
+    }
+
+    @Override protected void onDestroy() {
+        Net.bindProcess(this, false);
+        super.onDestroy();
     }
 }

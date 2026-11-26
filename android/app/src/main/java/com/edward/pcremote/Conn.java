@@ -127,6 +127,7 @@ public final class Conn {
                 Socket s = new Socket();
                 sock = s;
                 synchronized (this) { if (gen != generation) { s.close(); return; } socket = s; }
+                Net.bind(app, s);
                 s.setTcpNoDelay(true);
                 s.setReceiveBufferSize(1024 * 1024);
                 s.connect(new InetSocketAddress(target.optString("ip"), target.optInt("port", TCP_PORT)), 4000);

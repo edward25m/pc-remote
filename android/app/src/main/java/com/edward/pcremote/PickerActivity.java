@@ -38,7 +38,7 @@ public class PickerActivity extends BaseActivity {
         if (scanning) return;
         scanning = true;
         render();
-        Discovery.find(2000, list -> {
+        Discovery.find(this, 2000, list -> {
             scanning = false;
             found.clear();
             for (JSONObject o : list) found.put(o.optString("id"), o);
