@@ -40,6 +40,8 @@ public class ScreenActivity extends BaseActivity {
 
         LinearLayout root = Ui.vbox(this);
         root.setBackgroundColor(0xFF000000);
+        kb = new KeyboardBar(this);
+        root.addView(kb.inputView, Ui.lp(-1, -2));
         FrameLayout stage = new FrameLayout(this);
         view = new ScreenView(this);
         stage.addView(view, new FrameLayout.LayoutParams(-1, -1));
@@ -59,9 +61,7 @@ public class ScreenActivity extends BaseActivity {
         stage.addView(bar, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
 
         root.addView(stage, new LinearLayout.LayoutParams(-1, 0, 1));
-        kb = new KeyboardBar(this);
-        kb.setVisibility(View.GONE);
-        root.addView(kb, Ui.lp(-1, -2));
+        root.addView(kb.keysView, Ui.lp(-1, -2));
         setContentView(root);
 
         if (!conn.isWifi()) Ui.toast(this, "Over Bluetooth the screen view is slow. Use Wi-Fi or hotspot for smooth video.");
@@ -115,7 +115,7 @@ public class ScreenActivity extends BaseActivity {
     }
 
     @Override public void onBackPressed() {
-        if (kb.isShown2()) kb.hideKeyboard(); else super.onBackPressed();
+        if (kb.isShown()) kb.hide(); else super.onBackPressed();
     }
 
     /** Draws the PC picture; 1 finger = mouse, 2 fingers = zoom/pan (or scroll when not zoomed). */

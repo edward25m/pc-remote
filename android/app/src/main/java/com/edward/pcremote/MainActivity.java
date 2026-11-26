@@ -95,7 +95,7 @@ public class MainActivity extends BaseActivity {
 
         LinearLayout btns = Ui.hbox(this);
         btns.setPadding(0, Ui.dp(this, 12), 0, 0);
-        TextView sw = Ui.button(this, "⇄  Switch PC", Ui.CARD2, v -> startActivity(new Intent(this, PickerActivity.class)));
+        TextView sw = Ui.button(this, "↔  Switch PC", Ui.CARD2, v -> startActivity(new Intent(this, PickerActivity.class)));
         actionBtn = Ui.button(this, "Disconnect", Ui.ACCENT, v -> onAction());
         LinearLayout.LayoutParams l1 = new LinearLayout.LayoutParams(0, -2, 1);
         l1.setMarginEnd(Ui.dp(this, 10));
@@ -119,7 +119,7 @@ public class MainActivity extends BaseActivity {
         addTile(grid, "🎵", "Media", MediaActivity.class);
         addTile(grid, "📁", "Files", FilesActivity.class);
         addTile(grid, "⭐", "My buttons & apps", CustomActivity.class);
-        addTile(grid, "⏻", "Power", PowerActivity.class);
+        addTile(grid, "⚡", "Power", PowerActivity.class);
         root.addView(grid, Ui.lp(-1, -2));
 
         TextView ver = Ui.text(this, "PC Remote " + Updater.currentVersion(this), 12, Ui.MUTED);

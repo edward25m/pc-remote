@@ -14,7 +14,7 @@ public class PowerActivity extends BaseActivity {
         g.setColumnCount(2);
         add(g, "🔒", "Lock", "lock", false);
         add(g, "🌙", "Sleep", "sleep", true);
-        add(g, "⏻", "Shut down", "shutdown", true);
+        add(g, "🔌", "Shut down", "shutdown", true);
         add(g, "🔄", "Restart", "restart", true);
         add(g, "🚪", "Sign out", "signout", true);
         add(g, "💤", "Hibernate", "hibernate", true);

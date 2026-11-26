@@ -153,9 +153,16 @@ public final class Conn {
             if (gen != generation) return;
             String msg = e.getMessage() == null ? e.toString() : e.getMessage();
             if (state == CONNECTING) {
-                error = "bluetooth".equals(how)
-                        ? "Couldn't connect over Bluetooth. Make sure the PC is on, paired with this phone and PC Remote is running on it."
-                        : "Couldn't reach " + target.optString("name", "the PC") + ". Is it on and on the same Wi-Fi/hotspot?";
+                String name = target.optString("name", "the PC");
+                if ("bluetooth".equals(how))
+                    error = "Couldn't connect over Bluetooth. Make sure the PC is on, paired with this phone and PC Remote is running on it.";
+                else if (e instanceof java.net.ConnectException)
+                    error = "Reached " + name + " but PC Remote isn't running on it. Open PC Remote on the PC.";
+                else if (e instanceof java.net.SocketTimeoutException || e instanceof java.net.NoRouteToHostException)
+                    error = "Can't reach " + name + " (" + target.optString("ip") + "). Check it's on the same " + ("hotspot".equals(how) ? "hotspot" : "Wi-Fi")
+                            + ". If it is, on the PC: tray icon → Fix connection problems.";
+                else
+                    error = "Couldn't reach " + name + ". Is it on and on the same Wi-Fi/hotspot?";
             } else if (!userDisconnected) {
                 error = "Connection lost.";
             }

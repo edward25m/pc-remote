@@ -5,6 +5,7 @@ import android.content.Context;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
@@ -19,33 +20,91 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-/** Typing field + a row of special keys (Ctrl, Alt, Win, arrows, F-keys…). Used by the touchpad and screen views. */
-public class KeyboardBar extends LinearLayout {
-    private final EditText input;
+/**
+ * Keyboard for the PC, in two parts:
+ *  - inputView: the text you've typed (put it near the top of the screen). It keeps everything you type.
+ *  - keysView:  a row of special keys (Ctrl, Alt, Win, arrows, F-keys…) that sits above the phone keyboard.
+ */
+public class KeyboardBar {
+    public final LinearLayout inputView;
+    public final HorizontalScrollView keysView;
+    private final EndEditText input;
     private final Set<Integer> mods = new LinkedHashSet<>();
     private final List<TextView> modViews = new ArrayList<>();
-    private boolean suppress;
+    private final Activity a;
+    private boolean suppress, shown;
+
+    /** An EditText whose cursor always stays at the end, so what you see matches what the PC received. */
+    static final class EndEditText extends EditText {
+        EndEditText(Context c) { super(c); }
+        @Override protected void onSelectionChanged(int start, int end) {
+            int len = length();
+            if (start != len || end != len) { setSelection(len); return; }
+            super.onSelectionChanged(start, end);
+        }
+    }
 
     public KeyboardBar(Activity a) {
-        super(a);
-        setOrientation(VERTICAL);
-        setBackgroundColor(Ui.BAR);
-        int p = Ui.dp(a, 6);
-        setPadding(p, p, p, p);
+        this.a = a;
 
-        HorizontalScrollView hs = new HorizontalScrollView(a);
-        hs.setHorizontalScrollBarEnabled(false);
+        // ---- typed text (top) ----
+        inputView = Ui.hbox(a);
+        inputView.setBackgroundColor(Ui.BAR);
+        int p = Ui.dp(a, 8);
+        inputView.setPadding(p, p, p, p);
+        input = new EndEditText(a);
+        input.setHint("Type here: it goes straight to the PC");
+        input.setHintTextColor(Ui.MUTED);
+        input.setTextColor(Ui.TEXT);
+        input.setTextSize(16);
+        input.setBackground(Ui.round(a, Ui.CARD, 12));
+        input.setPadding(Ui.dp(a, 12), Ui.dp(a, 10), Ui.dp(a, 12), Ui.dp(a, 10));
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+        input.setImeOptions(EditorInfo.IME_FLAG_NO_EXTRACT_UI | EditorInfo.IME_FLAG_NO_FULLSCREEN);
+        input.setMaxLines(3);
+        input.setVerticalScrollBarEnabled(true);
+        input.setGravity(Gravity.TOP | Gravity.START);
+        inputView.addView(input, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView clear = Ui.text(a, "Clear", 14, Ui.ACCENT_LIGHT);
+        clear.setPadding(Ui.dp(a, 12), Ui.dp(a, 10), Ui.dp(a, 6), Ui.dp(a, 10));
+        clear.setOnClickListener(v -> clearField()); // only clears this box, not the PC
+        inputView.addView(clear);
+        inputView.setVisibility(View.GONE);
+
+        input.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int st, int c, int af) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                if (suppress) return;
+                Conn conn = Conn.get();
+                for (int i = 0; i < before; i++) conn.keys(Keys.BACK);
+                if (count > 0) typed(s.subSequence(start, start + count).toString());
+            }
+            @Override public void afterTextChanged(Editable e) {}
+        });
+        input.setOnKeyListener((v, code, ev) -> {
+            if (ev.getAction() != KeyEvent.ACTION_DOWN) return false;
+            if (code == KeyEvent.KEYCODE_DEL && input.length() == 0) { press(Keys.BACK); return true; }
+            return false;
+        });
+        input.setOnEditorActionListener((v, id, ev) -> { press(Keys.ENTER); appendQuietly("\n"); return true; });
+
+        // ---- special keys (bottom) ----
+        keysView = new HorizontalScrollView(a);
+        keysView.setHorizontalScrollBarEnabled(false);
+        keysView.setBackgroundColor(Ui.BAR);
         LinearLayout keys = Ui.hbox(a);
-        hs.addView(keys);
+        keys.setPadding(Ui.dp(a, 6), Ui.dp(a, 6), Ui.dp(a, 6), Ui.dp(a, 6));
+        keysView.addView(keys);
         mod(keys, "Ctrl", Keys.CTRL);
         mod(keys, "Alt", Keys.ALT);
         mod(keys, "Shift", Keys.SHIFT);
         mod(keys, "Win", Keys.WIN);
         key(keys, "Esc", Keys.ESC);
         key(keys, "Tab", Keys.TAB);
-        key(keys, "⌫", Keys.BACK);
+        key(keys, "Bksp", Keys.BACK);
         key(keys, "Del", Keys.DEL);
-        key(keys, "↵", Keys.ENTER);
+        key(keys, "Enter", Keys.ENTER);
         key(keys, "←", Keys.LEFT);
         key(keys, "↑", Keys.UP);
         key(keys, "↓", Keys.DOWN);
@@ -58,40 +117,7 @@ public class KeyboardBar extends LinearLayout {
         key(keys, "PrtSc", Keys.PRTSC);
         key(keys, "Ins", Keys.INS);
         key(keys, "Menu", Keys.APPS);
-        addView(hs, Ui.lp(-1, -2));
-
-        input = new EditText(a);
-        input.setHint("Type here to type on the PC…");
-        input.setHintTextColor(Ui.MUTED);
-        input.setTextColor(Ui.TEXT);
-        input.setBackground(Ui.round(a, Ui.CARD, 12));
-        input.setPadding(Ui.dp(a, 12), Ui.dp(a, 10), Ui.dp(a, 12), Ui.dp(a, 10));
-        // no autocorrect: every key you press goes straight to the PC
-        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
-        input.setImeOptions(EditorInfo.IME_ACTION_SEND | EditorInfo.IME_FLAG_NO_EXTRACT_UI | EditorInfo.IME_FLAG_NO_FULLSCREEN);
-        LinearLayout.LayoutParams lp = Ui.lp(-1, -2);
-        lp.topMargin = Ui.dp(a, 6);
-        addView(input, lp);
-
-        input.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int st, int c, int af) {}
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
-                if (suppress) return;
-                Conn conn = Conn.get();
-                for (int i = 0; i < before; i++) conn.keys(Keys.BACK);
-                if (count > 0) typed(s.subSequence(start, start + count).toString());
-            }
-            @Override public void afterTextChanged(Editable e) {
-                if (!suppress && e.length() > 40) { suppress = true; e.clear(); suppress = false; }
-            }
-        });
-        input.setOnKeyListener((v, code, ev) -> {
-            if (ev.getAction() != KeyEvent.ACTION_DOWN) return false;
-            if (code == KeyEvent.KEYCODE_DEL && input.length() == 0) { press(Keys.BACK); return true; }
-            if (code == KeyEvent.KEYCODE_ENTER) { press(Keys.ENTER); return true; }
-            return false;
-        });
-        input.setOnEditorActionListener((v, id, ev) -> { press(Keys.ENTER); clear(); return true; });
+        keysView.setVisibility(View.GONE);
     }
 
     private void typed(String s) {
@@ -102,7 +128,7 @@ public class KeyboardBar extends LinearLayout {
         }
     }
 
-    /** Presses a key, together with any held modifiers (which are then released). */
+    /** Presses a key together with any held modifiers (which are then released). */
     private void press(int vk) {
         int[] combo = new int[mods.size() + 1];
         int i = 0;
@@ -112,17 +138,18 @@ public class KeyboardBar extends LinearLayout {
         if (!mods.isEmpty()) { mods.clear(); refreshMods(); }
     }
 
-    private void clear() { suppress = true; input.setText(""); suppress = false; }
+    private void appendQuietly(String s) { suppress = true; input.append(s); suppress = false; }
+    private void clearField() { suppress = true; input.setText(""); suppress = false; }
 
     private TextView keyView(LinearLayout row, String label) {
-        TextView t = Ui.text(getContext(), label, 15, Ui.TEXT);
+        TextView t = Ui.text(a, label, 15, Ui.TEXT);
         t.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        t.setGravity(android.view.Gravity.CENTER);
-        t.setMinWidth(Ui.dp(getContext(), 46));
-        t.setPadding(Ui.dp(getContext(), 10), Ui.dp(getContext(), 10), Ui.dp(getContext(), 10), Ui.dp(getContext(), 10));
+        t.setGravity(Gravity.CENTER);
+        t.setMinWidth(Ui.dp(a, 46));
+        t.setPadding(Ui.dp(a, 10), Ui.dp(a, 10), Ui.dp(a, 10), Ui.dp(a, 10));
         Ui.setBg(t, Ui.CARD2, 10);
         LinearLayout.LayoutParams lp = Ui.lp(-2, -2);
-        lp.setMarginEnd(Ui.dp(getContext(), 6));
+        lp.setMarginEnd(Ui.dp(a, 6));
         row.addView(t, lp);
         return t;
     }
@@ -151,24 +178,26 @@ public class KeyboardBar extends LinearLayout {
         }
     }
 
-    public void showKeyboard() {
-        setVisibility(VISIBLE);
+    public void show() {
+        shown = true;
+        inputView.setVisibility(View.VISIBLE);
+        keysView.setVisibility(View.VISIBLE);
         input.requestFocus();
         input.postDelayed(() -> {
-            InputMethodManager imm = (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+            InputMethodManager imm = (InputMethodManager) a.getSystemService(Context.INPUT_METHOD_SERVICE);
             imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
         }, 150);
     }
 
-    public void hideKeyboard() {
-        InputMethodManager imm = (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+    public void hide() {
+        shown = false;
+        InputMethodManager imm = (InputMethodManager) a.getSystemService(Context.INPUT_METHOD_SERVICE);
         imm.hideSoftInputFromWindow(input.getWindowToken(), 0);
-        setVisibility(GONE);
+        inputView.setVisibility(View.GONE);
+        keysView.setVisibility(View.GONE);
     }
 
-    public void toggle() {
-        if (getVisibility() == VISIBLE) hideKeyboard(); else showKeyboard();
-    }
+    public void toggle() { if (shown) hide(); else show(); }
 
-    public boolean isShown2() { return getVisibility() == View.VISIBLE; }
+    public boolean isShown() { return shown; }
 }

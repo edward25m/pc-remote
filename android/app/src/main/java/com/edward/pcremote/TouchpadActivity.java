@@ -53,8 +53,9 @@ public class TouchpadActivity extends BaseActivity implements SensorEventListene
         density = getResources().getDisplayMetrics().density;
         LinearLayout c = Ui.screen(this, "Mouse", false);
         c.setPadding(Ui.dp(this, 10), Ui.dp(this, 10), Ui.dp(this, 10), Ui.dp(this, 10));
-        airBtn = Ui.barButton(this, "✈ Air", v -> setAir(!air));
-        Ui.barButton(this, "⌨ Keyboard", v -> kb.toggle());
+        LinearLayout root = (LinearLayout) c.getParent();
+        kb = new KeyboardBar(this);
+        root.addView(kb.inputView, 1, Ui.lp(-1, -2)); // what you type shows at the top
 
         pad = new FrameLayout(this);
         pad.setBackground(Ui.round(this, Ui.CARD, 22));
@@ -66,21 +67,29 @@ public class TouchpadActivity extends BaseActivity implements SensorEventListene
         c.addView(pad, new LinearLayout.LayoutParams(-1, 0, 1));
         pad.setOnTouchListener((v, e) -> { onPad(e); return true; });
 
-        kb = new KeyboardBar(this);
-        kb.setVisibility(View.GONE);
-        ((LinearLayout) c.getParent()).addView(kb, Ui.lp(-1, -2));
+        // bottom buttons
+        LinearLayout bottom = Ui.hbox(this);
+        bottom.setPadding(0, Ui.dp(this, 10), 0, 0);
+        airBtn = Ui.button(this, "✈  Air mouse", Ui.CARD2, v -> setAir(!air));
+        TextView kbBtn = Ui.button(this, "⌨  Keyboard", Ui.ACCENT, v -> kb.toggle());
+        LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(0, Ui.dp(this, 56), 1);
+        bl.setMarginEnd(Ui.dp(this, 10));
+        bottom.addView(airBtn, bl);
+        bottom.addView(kbBtn, new LinearLayout.LayoutParams(0, Ui.dp(this, 56), 1));
+        c.addView(bottom, Ui.lp(-1, -2));
+
+        root.addView(kb.keysView, Ui.lp(-1, -2)); // special keys sit just above the phone keyboard
 
         sm = (SensorManager) getSystemService(SENSOR_SERVICE);
         gyro = sm == null ? null : sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
         if (gyro == null) airBtn.setAlpha(0.4f);
 
-        if (getIntent().getBooleanExtra("keyboard", false)) kb.showKeyboard();
+        if (getIntent().getBooleanExtra("keyboard", false)) kb.show();
     }
 
     private void showHolding(boolean on) {
         hint.setText(on ? "Holding · move to drag · tap to drop" : HINT);
         hint.setTextColor(on ? Ui.ACCENT_LIGHT : Ui.MUTED);
-        pad.setBackground(Ui.round(this, on ? Ui.SELECTED : Ui.CARD, 22));
     }
 
     private float speed() { return 0.6f + Prefs.mouseSpeed(this) / 40f; }
@@ -163,8 +172,9 @@ public class TouchpadActivity extends BaseActivity implements SensorEventListene
     private void setAir(boolean on) {
         if (on && gyro == null) { Ui.toast(this, "This phone has no gyroscope for air mouse"); return; }
         air = on;
-        airBtn.setText(on ? "✈ Air ON" : "✈ Air");
-        airBtn.setTextColor(on ? Ui.ON : Ui.ACCENT_LIGHT);
+        airBtn.setText(on ? "✈  Air mouse ON" : "✈  Air mouse");
+        Ui.setBg(airBtn, on ? Ui.ACCENT : Ui.CARD2, 14);
+        airBtn.setTextColor(on ? Ui.WHITE : Ui.TEXT);
         if (on) {
             lastGyroTs = 0;
             sm.registerListener(this, gyro, SensorManager.SENSOR_DELAY_FASTEST);
@@ -197,6 +207,6 @@ public class TouchpadActivity extends BaseActivity implements SensorEventListene
     }
 
     @Override public void onBackPressed() {
-        if (kb.isShown2()) kb.hideKeyboard(); else super.onBackPressed();
+        if (kb.isShown()) kb.hide(); else super.onBackPressed();
     }
 }

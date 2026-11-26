@@ -76,13 +76,10 @@ public class RemoteService extends Service {
                 rv.setViewVisibility(ids[i], android.view.View.VISIBLE);
                 if (a.image != null) {
                     rv.setImageViewBitmap(ids[i], a.image);
-                    rv.setInt(ids[i], "setBackgroundResource", 0);
-                    rv.setViewPadding(ids[i], 4, 4, 4, 4);
+                    rv.setInt(ids[i], "setColorFilter", 0);
                 } else {
                     rv.setImageViewResource(ids[i], a.icon);
-                    rv.setInt(ids[i], "setBackgroundResource", R.drawable.nbtn_bg);
-                    int pad = Math.round(10 * getResources().getDisplayMetrics().density);
-                    rv.setViewPadding(ids[i], pad, pad, pad, pad);
+                    rv.setInt(ids[i], "setColorFilter", iconColor()); // plain icons that match the notification text
                 }
                 Intent it = new Intent(this, ActionReceiver.class).setAction("act:" + a.id);
                 rv.setOnClickPendingIntent(ids[i], PendingIntent.getBroadcast(this, 100 + i, it,
@@ -114,6 +111,16 @@ public class RemoteService extends Service {
         Notification n = b.build();
         n.flags |= Notification.FLAG_NO_CLEAR | Notification.FLAG_ONGOING_EVENT;
         return n;
+    }
+
+    private int iconColor() {
+        int night = getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
+        return night == android.content.res.Configuration.UI_MODE_NIGHT_YES ? 0xFFFFFFFF : 0xFF1F2937;
+    }
+
+    @Override public void onConfigurationChanged(android.content.res.Configuration c) {
+        super.onConfigurationChanged(c);
+        refresh();
     }
 
     /** When "volume buttons always control the PC" is on, a remote-volume media session takes the volume keys. */

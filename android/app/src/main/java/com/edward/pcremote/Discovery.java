@@ -50,14 +50,27 @@ public final class Discovery {
                 s.setSoTimeout(250);
                 byte[] q = "PCREMOTE?".getBytes(StandardCharsets.UTF_8);
                 Set<InetAddress> targets = broadcasts(app, mode);
+                // Many routers block broadcasts, so also ask every address on the local network directly
+                // (a few hundred tiny packets on your own Wi-Fi/hotspot: no data used) and the PCs' last known addresses.
+                Set<InetAddress> direct = sweep(app, mode);
+                for (JSONObject k : Prefs.pcs(app)) {
+                    try { if (!k.optString("ip").isEmpty()) direct.add(InetAddress.getByName(k.optString("ip"))); } catch (Exception ignored) {}
+                }
                 long end = System.currentTimeMillis() + timeoutMs;
                 long nextSend = 0;
+                int rounds = 0;
                 byte[] buf = new byte[2048];
                 while (System.currentTimeMillis() < end) {
                     if (System.currentTimeMillis() >= nextSend) {
                         for (InetAddress a : targets) {
                             try { s.send(new DatagramPacket(q, q.length, a, PORT)); } catch (Exception ignored) {}
                             if (wifiSock != null) try { wifiSock.send(new DatagramPacket(q, q.length, a, PORT)); } catch (Exception ignored) {}
+                        }
+                        if (rounds++ < 2) {
+                            for (InetAddress a : direct) {
+                                java.net.DatagramSocket ds = wifiSock != null && !isHotspotAddr(app, a) ? wifiSock : s;
+                                try { ds.send(new DatagramPacket(q, q.length, a, PORT)); } catch (Exception ignored) {}
+                            }
                         }
                         nextSend = System.currentTimeMillis() + 500;
                     }
@@ -103,6 +116,41 @@ public final class Discovery {
             try { out.add(InetAddress.getByName("255.255.255.255")); } catch (Exception ignored) {}
         }
         return out;
+    }
+
+    /** All host addresses on the Wi-Fi and/or hotspot subnets (only for small home-size networks). */
+    static Set<InetAddress> sweep(Context c, String mode) {
+        Set<InetAddress> out = new LinkedHashSet<>();
+        String wifiIf = Net.wifiInterface(c);
+        try {
+            for (NetworkInterface ni : Collections.list(NetworkInterface.getNetworkInterfaces())) {
+                if (!ni.isUp() || ni.isLoopback()) continue;
+                String n = ni.getName();
+                if (n.startsWith("rmnet") || n.startsWith("ccmni") || n.startsWith("v4-") || n.startsWith("dummy")
+                        || n.startsWith("tun") || n.startsWith("ip6") || n.startsWith("p2p")) continue;
+                boolean isWifiClient = n.equals(wifiIf);
+                if ("wifi".equals(mode) && !isWifiClient) continue;
+                if ("hotspot".equals(mode) && isWifiClient) continue;
+                for (InterfaceAddress ia : ni.getInterfaceAddresses()) {
+                    byte[] ip = ia.getAddress().getAddress();
+                    int prefix = ia.getNetworkPrefixLength();
+                    if (ip.length != 4 || prefix < 22 || prefix > 30) continue;
+                    int base = ((ip[0] & 0xFF) << 24) | ((ip[1] & 0xFF) << 16) | ((ip[2] & 0xFF) << 8) | (ip[3] & 0xFF);
+                    int mask = prefix == 0 ? 0 : 0xFFFFFFFF << (32 - prefix);
+                    int net = base & mask, count = 1 << (32 - prefix);
+                    for (int i = 1; i < count - 1; i++) {
+                        int h = net | i;
+                        if (h == base) continue;
+                        out.add(InetAddress.getByAddress(new byte[]{(byte) (h >> 24), (byte) (h >> 16), (byte) (h >> 8), (byte) h}));
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        return out;
+    }
+
+    private static boolean isHotspotAddr(Context c, InetAddress a) {
+        return !onWifiSubnet(c, a);
     }
 
     private static boolean onWifiSubnet(Context c, InetAddress a) {
@@ -182,7 +230,7 @@ public final class Discovery {
             return;
         }
 
-        find(c, 1600, mode, found -> {
+        find(c, 2200, mode, found -> {
             if (conn.state != Conn.IDLE) { seen.onFound(found); return; }
             for (JSONObject k : known) {
                 for (JSONObject f : found) {
@@ -199,9 +247,21 @@ public final class Discovery {
                 seen.onFound(found);
                 return;
             }
-            if ("auto".equals(mode) && !known.isEmpty() && found.isEmpty()) {
+            if (!known.isEmpty() && found.isEmpty()) {
                 JSONObject last = known.get(0);
-                if (!last.optString("bt").isEmpty() && btOn(c) && hasBtPermission(c)) conn.connect(last, "bluetooth");
+                if (!last.optString("ip").isEmpty()) {
+                    // not found by searching: try its last address directly anyway
+                    String how = "hotspot".equals(mode) ? "hotspot" : "wifi".equals(mode) ? "wifi"
+                            : (Net.wifi(c) != null ? "wifi" : "hotspot");
+                    conn.connect(last, how);
+                    seen.onFound(found);
+                    return;
+                }
+                if ("auto".equals(mode) && !last.optString("bt").isEmpty() && btOn(c) && hasBtPermission(c)) {
+                    conn.connect(last, "bluetooth");
+                    seen.onFound(found);
+                    return;
+                }
             }
             if (found.isEmpty() && !"auto".equals(mode))
                 conn.error = "hotspot".equals(mode) ? "No PC found on your hotspot. Is the PC connected to it and PC Remote running?"

@@ -33,9 +33,16 @@ namespace PCRemote
             }) { Checked = Autostart.IsOn() };
             var update = new ToolStripMenuItem("Check for updates", null, (s, e) => new Thread(() => Updater.CheckInteractive()) { IsBackground = true }.Start());
             var help = new ToolStripMenuItem("How to connect…", null, (s, e) => ShowHelp());
+            var fix = new ToolStripMenuItem("Fix connection problems", null, (s, e) => new Thread(() =>
+            {
+                Firewall.Ensure();
+                MessageBox.Show("Done. PC Remote is now allowed through the Windows firewall on all networks (home Wi-Fi and phone hotspot).\n\n" +
+                    "If the phone still can't connect, make sure both are on the same Wi-Fi, and that the router doesn't have \"AP isolation\" / \"client isolation\" turned on.",
+                    "PC Remote", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }) { IsBackground = true }.Start());
             var folder = new ToolStripMenuItem("Open log folder", null, (s, e) => { try { System.Diagnostics.Process.Start(Config.Dir); } catch { } });
             var exit = new ToolStripMenuItem("Exit", null, (s, e) => { icon.Visible = false; Environment.Exit(0); });
-            menu.Items.AddRange(new ToolStripItem[] { title, status, new ToolStripSeparator(), rename, allowedMenu, autostart, update, help, folder, new ToolStripSeparator(), exit });
+            menu.Items.AddRange(new ToolStripItem[] { title, status, new ToolStripSeparator(), rename, allowedMenu, autostart, update, fix, help, folder, new ToolStripSeparator(), exit });
             menu.Opening += (s, e) => { RefreshAllowed(); autostart.Checked = Autostart.IsOn(); };
 
             icon = new NotifyIcon { Icon = Program.AppIcon(), Text = "PC Remote", ContextMenuStrip = menu, Visible = true };
@@ -116,8 +123,7 @@ namespace PCRemote
             });
         }
 
-        public void Connected(string name, string transport)
-            => Notify("Phone connected", name + " is now connected over " + (transport == "bluetooth" ? "Bluetooth" : "Wi-Fi") + ".");
+        public void Connected(string name, string transport) { } // no pop-up: the phone app shows the connection status
 
         public bool AskAllow(string name, string transport)
         {
