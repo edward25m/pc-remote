@@ -29,7 +29,6 @@ jobs:
 
   android:
     runs-on: ubuntu-latest
-    if: hashFiles('android/app/build.gradle') != ''
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4

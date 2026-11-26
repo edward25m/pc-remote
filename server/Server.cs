@@ -111,6 +111,7 @@ namespace PCRemote
                     var c = l.AcceptTcpClient();
                     c.NoDelay = true;
                     c.SendBufferSize = 512 * 1024;
+                    c.ReceiveTimeout = 20000; // the phone pings every few seconds; silence means it's gone
                     var local = ((IPEndPoint)c.Client.LocalEndPoint).Address;
                     if (local.IsIPv4MappedToIPv6) local = local.MapToIPv4();
                     var ses = new Session(c.GetStream(), "wifi", local.ToString(), () => c.Close());
@@ -156,7 +157,9 @@ namespace PCRemote
                 while (true)
                 {
                     var c = l.AcceptBluetoothClient();
-                    var ses = new Session(c.GetStream(), "bluetooth", "", () => c.Close());
+                    var st = c.GetStream();
+                    try { st.ReadTimeout = 20000; } catch { }
+                    var ses = new Session(st, "bluetooth", "", () => c.Close());
                     ses.Start();
                 }
             }

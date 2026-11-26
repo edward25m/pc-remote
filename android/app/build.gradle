@@ -1,0 +1,45 @@
+plugins {
+    id 'com.android.application'
+}
+
+def buildNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger()
+
+android {
+    namespace 'com.edward.pcremote'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.edward.pcremote'
+        minSdk 26
+        targetSdk 34
+        versionCode buildNumber
+        versionName "1.0.${buildNumber}"
+    }
+
+    // Fixed signing key so every update installs over the previous version
+    signingConfigs {
+        release {
+            storeFile file('pcremote.keystore')
+            storePassword 'pcremote'
+            keyAlias 'pcremote'
+            keyPassword 'pcremote'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
