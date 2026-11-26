@@ -61,9 +61,13 @@ public class NotifBarActivity extends BaseActivity {
         r.setBackground(Ui.round(this, Ui.CARD, 14));
         int p = Ui.dp(this, 10);
         r.setPadding(Ui.dp(this, 14), p, p, p);
-        TextView sym = Ui.text(this, a.symbol, 20, Ui.TEXT);
-        sym.setMinWidth(Ui.dp(this, 40));
-        r.addView(sym);
+        android.widget.ImageView iv = new android.widget.ImageView(this);
+        int pad = Ui.dp(this, 7);
+        if (a.image != null) iv.setImageBitmap(a.image);
+        else { iv.setImageResource(a.icon); iv.setBackgroundResource(R.drawable.nbtn_bg); iv.setPadding(pad, pad, pad, pad); }
+        LinearLayout.LayoutParams il = new LinearLayout.LayoutParams(Ui.dp(this, 34), Ui.dp(this, 34));
+        il.setMarginEnd(Ui.dp(this, 12));
+        r.addView(iv, il);
         r.addView(Ui.text(this, a.label, 15, Ui.TEXT), new LinearLayout.LayoutParams(0, -2, 1));
         return r;
     }

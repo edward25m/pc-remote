@@ -14,7 +14,7 @@ namespace PCRemote
     /// Length-prefixed frames: [1 byte type][4 bytes big-endian length][payload]
     sealed class FrameIO
     {
-        public const byte JSON = 1, SCREEN = 2, DATA = 3;
+        public const byte JSON = 1, SCREEN = 2, DATA = 3, INPUT = 4;
         readonly Stream s;
         readonly object wl = new object();
         readonly byte[] hdr = new byte[5];

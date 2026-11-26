@@ -144,7 +144,11 @@ public class KeyboardBar extends LinearLayout {
     }
 
     private void refreshMods() {
-        for (TextView t : modViews) Ui.setBg(t, mods.contains((Integer) t.getTag()) ? Ui.ACCENT : Ui.CARD2, 10);
+        for (TextView t : modViews) {
+            boolean on = mods.contains((Integer) t.getTag());
+            Ui.setBg(t, on ? Ui.ACCENT : Ui.CARD2, 10);
+            t.setTextColor(on ? Ui.WHITE : Ui.TEXT);
+        }
     }
 
     public void showKeyboard() {

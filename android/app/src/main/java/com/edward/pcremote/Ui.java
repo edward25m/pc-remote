@@ -18,11 +18,41 @@ import android.widget.Toast;
 
 /** Small helpers so every screen shares the same dark-blue look. */
 public final class Ui {
-    public static final int BG = 0xFF0F172A, BAR = 0xFF0B1220, CARD = 0xFF1E293B, CARD2 = 0xFF334155,
-            ACCENT = 0xFF2563EB, ACCENT_LIGHT = 0xFF60A5FA, TEXT = 0xFFF1F5F9, MUTED = 0xFF94A3B8,
-            ON = 0xFF38BDF8, WARN = 0xFFF59E0B;
+    public static final int ACCENT = 0xFF2563EB, WHITE = 0xFFFFFFFF;
+    public static int BG, BAR, CARD, CARD2, ACCENT_LIGHT, TEXT, MUTED, ON, SELECTED;
+    public static boolean night;
+    static { load(false); }
 
     private Ui() {}
+
+    private static void load(boolean dark) {
+        night = dark;
+        if (dark) { // AMOLED: true black
+            BG = 0xFF000000; BAR = 0xFF000000; CARD = 0xFF121212; CARD2 = 0xFF262626;
+            ACCENT_LIGHT = 0xFF60A5FA; TEXT = 0xFFF5F5F5; MUTED = 0xFF9CA3AF; ON = 0xFF38BDF8; SELECTED = 0xFF1E3A8A;
+        } else {
+            BG = 0xFFF3F6FB; BAR = 0xFFFFFFFF; CARD = 0xFFFFFFFF; CARD2 = 0xFFE3E9F2;
+            ACCENT_LIGHT = 0xFF1D4ED8; TEXT = 0xFF0F172A; MUTED = 0xFF64748B; ON = 0xFF0369A1; SELECTED = 0xFFDBEAFE;
+        }
+    }
+
+    public static void loadColors(Context c) { load(Prefs.sp(c).getBoolean("night", false)); }
+
+    /** Call at the start of every screen: picks light or AMOLED night colours and styles the system bars. */
+    public static void apply(Activity a) {
+        load(Prefs.sp(a).getBoolean("night", false));
+        a.setTheme(night ? R.style.AppTheme_Night : R.style.AppTheme);
+        android.view.Window w = a.getWindow();
+        w.setStatusBarColor(BAR);
+        w.setNavigationBarColor(BAR);
+        View d = w.getDecorView();
+        int f = d.getSystemUiVisibility();
+        if (night) f &= ~(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+        else f |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        d.setSystemUiVisibility(f);
+    }
+
+    private static boolean isAccent(int color) { return color == ACCENT || color == 0xFF1D4ED8; }
 
     public static int dp(Context c, float v) {
         return Math.round(v * c.getResources().getDisplayMetrics().density);
@@ -36,7 +66,7 @@ public final class Ui {
     }
 
     public static void setBg(View v, int color, float radiusDp) {
-        v.setBackground(new RippleDrawable(ColorStateList.valueOf(0x33FFFFFF), round(v.getContext(), color, radiusDp), null));
+        v.setBackground(new RippleDrawable(ColorStateList.valueOf(night ? 0x33FFFFFF : 0x22000000), round(v.getContext(), color, radiusDp), null));
     }
 
     public static TextView text(Context c, String s, float sp, int color) {
@@ -48,7 +78,7 @@ public final class Ui {
     }
 
     public static TextView button(Context c, String label, int color, View.OnClickListener l) {
-        TextView b = text(c, label, 16, TEXT);
+        TextView b = text(c, label, 16, isAccent(color) ? WHITE : TEXT);
         b.setGravity(Gravity.CENTER);
         b.setTypeface(Typeface.DEFAULT_BOLD);
         int p = dp(c, 12);
@@ -65,6 +95,7 @@ public final class Ui {
         t.setOrientation(LinearLayout.VERTICAL);
         t.setGravity(Gravity.CENTER);
         setBg(t, CARD, 20);
+        if (!night) t.setElevation(dp(c, 1.5f));
         int p = dp(c, 14);
         t.setPadding(p, p, p, p);
         TextView i = text(c, icon, 34, TEXT);
@@ -76,6 +107,18 @@ public final class Ui {
         t.addView(n);
         t.setClickable(true);
         t.setOnClickListener(v -> { haptic(v); l.onClick(v); });
+        return t;
+    }
+
+    /** Tile showing a picture (e.g. a real app icon) instead of an emoji. */
+    public static LinearLayout tile(Context c, android.graphics.Bitmap img, String fallback, String label, View.OnClickListener l) {
+        LinearLayout t = tile(c, fallback, label, l);
+        if (img != null) {
+            android.widget.ImageView iv = new android.widget.ImageView(c);
+            iv.setImageBitmap(img);
+            t.removeViewAt(0);
+            t.addView(iv, 0, new LinearLayout.LayoutParams(dp(c, 48), dp(c, 48)));
+        }
         return t;
     }
 

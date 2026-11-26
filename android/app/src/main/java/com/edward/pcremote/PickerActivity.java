@@ -38,7 +38,7 @@ public class PickerActivity extends BaseActivity {
         if (scanning) return;
         scanning = true;
         render();
-        Discovery.find(this, 2000, list -> {
+        Discovery.find(this, 2000, "auto", list -> {
             scanning = false;
             found.clear();
             for (JSONObject o : list) found.put(o.optString("id"), o);
@@ -60,7 +60,7 @@ public class PickerActivity extends BaseActivity {
                         : !k.optString("bt").isEmpty() ? "Not seen on Wi-Fi · tap to try Bluetooth" : "Not seen on this network";
                 TextView row = row("💻  " + k.optString("name"), sub, current);
                 row.setOnClickListener(v -> {
-                    if (live != null) go(live, "wifi");
+                    if (live != null) go(live, Discovery.how(Prefs.connMode(this), live));
                     else if (!k.optString("bt").isEmpty()) goBt(k);
                     else Ui.toast(this, "Can't see that PC. Make sure it's on and on the same Wi-Fi/hotspot.");
                 });
@@ -76,13 +76,13 @@ public class PickerActivity extends BaseActivity {
             }
         }
 
-        box.addView(Ui.section(this, scanning ? "Searching this network…" : "Found on this network"));
+        box.addView(Ui.section(this, scanning ? "Searching Wi-Fi and hotspot…" : "Found on Wi-Fi / hotspot"));
         int newOnes = 0;
         for (JSONObject f : found.values()) {
             if (Prefs.pc(this, f.optString("id")) != null) continue;
             newOnes++;
             TextView row = row("🆕  " + f.optString("name"), f.optString("ip") + " · tap to connect", false);
-            row.setOnClickListener(v -> go(f, "wifi"));
+            row.setOnClickListener(v -> go(f, Discovery.how(Prefs.connMode(this), f)));
             box.addView(row, rowLp());
         }
         if (newOnes == 0 && !scanning) box.addView(note(known.isEmpty()
@@ -148,7 +148,7 @@ public class PickerActivity extends BaseActivity {
                         pc.put("ip", e.getText().toString().trim());
                         pc.put("port", Conn.TCP_PORT);
                         pc.put("name", e.getText().toString().trim());
-                        go(pc, "wifi");
+                        go(pc, Net.wifi(this) != null ? "wifi" : "hotspot");
                     } catch (Exception ignored) {}
                 }).setNegativeButton("Cancel", null).show();
     }
@@ -176,7 +176,7 @@ public class PickerActivity extends BaseActivity {
         t.setText(sb);
         int p = Ui.dp(this, 14);
         t.setPadding(p, p, p, p);
-        Ui.setBg(t, highlight ? 0xFF1E3A8A : Ui.CARD, 16);
+        Ui.setBg(t, highlight ? Ui.SELECTED : Ui.CARD, 16);
         t.setClickable(true);
         return t;
     }

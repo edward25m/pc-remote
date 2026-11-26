@@ -23,6 +23,21 @@ public final class Net {
         return null; // e.g. this phone is the hotspot: the hotspot link is local and never uses data
     }
 
+    /** Name of the Wi-Fi interface the phone uses as a normal Wi-Fi client (e.g. wlan0), or null. */
+    public static String wifiInterface(Context c) {
+        try {
+            Network n = wifi(c);
+            if (n == null) return null;
+            ConnectivityManager cm = (ConnectivityManager) c.getSystemService(Context.CONNECTIVITY_SERVICE);
+            return cm.getLinkProperties(n).getInterfaceName();
+        } catch (Exception e) { return null; }
+    }
+
+    /** True if the phone seems to be sharing a hotspot (a local network interface other than Wi-Fi client / mobile data). */
+    public static boolean hotspotOn(Context c) {
+        return !Discovery.broadcasts(c, "hotspot").isEmpty();
+    }
+
     public static void bind(Context c, java.net.Socket s) {
         Network n = wifi(c);
         if (n != null) try { n.bindSocket(s); } catch (Exception ignored) {}

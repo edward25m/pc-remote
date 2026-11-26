@@ -65,7 +65,40 @@ public final class Keys {
 
     public static final class Action {
         public final String id, symbol, label;
-        Action(String id, String symbol, String label) { this.id = id; this.symbol = symbol; this.label = label; }
+        public int icon = R.drawable.ic_star;
+        public android.graphics.Bitmap image; // real app icon for app buttons
+        Action(String id, String symbol, String label) {
+            this.id = id; this.symbol = symbol; this.label = label;
+            int r = iconFor(id);
+            if (r != 0) icon = r;
+        }
+    }
+
+    static int iconFor(String id) {
+        switch (id) {
+            case "prev": return R.drawable.ic_prev;
+            case "play": return R.drawable.ic_play;
+            case "next": return R.drawable.ic_next;
+            case "voldown": return R.drawable.ic_voldown;
+            case "volup": return R.drawable.ic_volup;
+            case "mute": return R.drawable.ic_mute;
+            case "altf4": return R.drawable.ic_altf4;
+            case "stop": return R.drawable.ic_stop;
+            case "space": return R.drawable.ic_space;
+            case "lock": return R.drawable.ic_lock;
+            case "screen_off": return R.drawable.ic_screen_off;
+            default: return 0;
+        }
+    }
+
+    /** Decodes a button's saved app icon, if it has one. */
+    public static android.graphics.Bitmap image(JSONObject b) {
+        String img = b.optString("img");
+        if (img.isEmpty()) return null;
+        try {
+            byte[] d = android.util.Base64.decode(img, android.util.Base64.DEFAULT);
+            return android.graphics.BitmapFactory.decodeByteArray(d, 0, d.length);
+        } catch (Exception e) { return null; }
     }
 
     public static List<Action> builtIn() {
@@ -94,7 +127,9 @@ public final class Keys {
             String label = b.optString("label", "Button");
             String sym = b.optString("icon", "");
             if (sym.isEmpty()) sym = label.length() <= 3 ? label : label.substring(0, 2);
-            l.add(new Action("custom:" + b.optString("uid"), sym, label + " (my button)"));
+            Action a = new Action("custom:" + b.optString("uid"), sym, label + " (my button)");
+            a.image = image(b);
+            l.add(a);
         }
         return l;
     }
@@ -145,6 +180,7 @@ public final class Keys {
                 break;
             case "text": conn.text(value); break;
             case "run": conn.run(value); break;
+            case "app": conn.send(Conn.msg("run_app", "q", value, "label", b.optString("label"))); break;
         }
     }
 

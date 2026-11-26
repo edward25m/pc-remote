@@ -47,6 +47,7 @@ public final class Prefs {
     public static int scrollSpeed(Context c) { return sp(c).getInt("scroll_speed", 50); }
     public static int screenQuality(Context c) { return sp(c).getInt("screen_q", 1); } // 0 low .. 3 best
     public static String mediaDefault(Context c) { return sp(c).getString("media_default", "ask"); } // ask | pc | phone
+    public static String connMode(Context c) { return sp(c).getString("conn_mode", "auto"); } // auto | wifi | hotspot | bt
     public static boolean invertScroll(Context c) { return sp(c).getBoolean("invert_scroll", false); }
 
     public static void put(Context c, String k, Object v) {

@@ -33,7 +33,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 /** The single connection to a PC (over Wi-Fi/hotspot or Bluetooth). */
 public final class Conn {
     public static final int IDLE = 0, CONNECTING = 1, WAITING = 2, CONNECTED = 3;
-    public static final byte JSON = 1, SCREEN = 2, DATA = 3;
+    public static final byte JSON = 1, SCREEN = 2, DATA = 3, INPUT = 4;
     public static final int TCP_PORT = 47801;
     public static final UUID BT_UUID = UUID.fromString("6f3c2a10-9b1e-4c7d-a2f4-5e8b9c0d1a23");
 
@@ -83,7 +83,11 @@ public final class Conn {
     public void removeListener(Listener l) { listeners.remove(l); }
 
     public boolean isConnected() { return state == CONNECTED; }
-    public boolean isWifi() { return "wifi".equals(transport); }
+    /** True for Wi-Fi and hotspot (a network link); false for Bluetooth. */
+    public boolean isWifi() { return !"bluetooth".equals(transport); }
+    public String transportLabel() {
+        return "bluetooth".equals(transport) ? "Bluetooth" : "hotspot".equals(transport) ? "hotspot" : "Wi-Fi";
+    }
     public String pcName() { return pc.optString("name", "PC"); }
 
     private void setState(int s) {
@@ -127,7 +131,7 @@ public final class Conn {
                 Socket s = new Socket();
                 sock = s;
                 synchronized (this) { if (gen != generation) { s.close(); return; } socket = s; }
-                Net.bind(app, s);
+                if ("wifi".equals(how)) Net.bind(app, s); // hotspot links are local to the phone: no binding needed
                 s.setTcpNoDelay(true);
                 s.setReceiveBufferSize(1024 * 1024);
                 s.connect(new InetSocketAddress(target.optString("ip"), target.optInt("port", TCP_PORT)), 4000);
@@ -204,6 +208,7 @@ public final class Conn {
                 screenH = m.optInt("sh", 1080);
                 pcVersion = m.optString("ver");
                 setState(CONNECTED);
+                lockWifi(true);
                 main.post(() -> {
                     try {
                         Intent i = new Intent(app, RemoteService.class);
@@ -211,6 +216,10 @@ public final class Conn {
                     } catch (Exception e) { android.util.Log.w("PCRemote", "service: " + e); }
                 });
                 schedulePing(generation);
+                AppIcons.sync(app);
+                break;
+            case "app_icon":
+                AppIcons.onIcon(app, m);
                 break;
             case "clip": {
                 String s = m.optString("s");
@@ -266,6 +275,7 @@ public final class Conn {
         out = null;
         try { if (s != null) s.close(); } catch (Exception ignored) {}
         Transfers.onDisconnected();
+        lockWifi(false);
         setState(IDLE);
         main.post(() -> { try { app.stopService(new Intent(app, RemoteService.class)); } catch (Exception ignored) {} });
     }
@@ -306,6 +316,92 @@ public final class Conn {
         return o;
     }
 
+    // ---------------------------------------------------------------- low latency
+
+    private android.net.wifi.WifiManager.WifiLock wifiLock;
+
+    /** Stops the phone's Wi-Fi power saving while connected, which otherwise adds lag. */
+    private void lockWifi(boolean on) {
+        try {
+            if (on && isWifi()) {
+                if (wifiLock == null) {
+                    android.net.wifi.WifiManager wm = (android.net.wifi.WifiManager) app.getSystemService(Context.WIFI_SERVICE);
+                    int mode = Build.VERSION.SDK_INT >= 29 ? android.net.wifi.WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                            : android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF;
+                    wifiLock = wm.createWifiLock(mode, "PCRemote");
+                    wifiLock.setReferenceCounted(false);
+                }
+                wifiLock.acquire();
+            } else if (wifiLock != null && wifiLock.isHeld()) wifiLock.release();
+        } catch (Exception ignored) {}
+    }
+
+    // Mouse input uses tiny binary messages, and movements that pile up while the link is busy
+    // are merged into one, so the pointer never falls behind your finger (important on Bluetooth).
+    private final Object inLock = new Object();
+    private int pendDx, pendDy, pendSy, pendSx;
+    private double absX = -1, absY = -1;
+    private boolean movePosted, scrollPosted, absPosted;
+
+    private void writeInput(byte[] p) { writeFrame(INPUT, p); }
+
+    private static byte[] op(int op, int a, int b) {
+        a = Math.max(-32768, Math.min(32767, a));
+        b = Math.max(-32768, Math.min(32767, b));
+        return new byte[]{(byte) op, (byte) (a >> 8), (byte) a, (byte) (b >> 8), (byte) b};
+    }
+
+    public void move(int dx, int dy) {
+        if ((dx == 0 && dy == 0) || out == null) return;
+        synchronized (inLock) {
+            pendDx += dx; pendDy += dy;
+            if (movePosted) return;
+            movePosted = true;
+        }
+        writer.post(() -> {
+            int x, y;
+            synchronized (inLock) { x = pendDx; y = pendDy; pendDx = pendDy = 0; movePosted = false; }
+            if (x != 0 || y != 0) writeInput(op(1, x, y));
+        });
+    }
+
+    public void moveTo(double x, double y) {
+        if (out == null) return;
+        synchronized (inLock) {
+            absX = x; absY = y;
+            if (absPosted) return;
+            absPosted = true;
+        }
+        writer.post(() -> {
+            double ax, ay;
+            synchronized (inLock) { ax = absX; ay = absY; absPosted = false; }
+            int ix = (int) Math.round(Math.max(0, Math.min(1, ax)) * 65535), iy = (int) Math.round(Math.max(0, Math.min(1, ay)) * 65535);
+            writeInput(new byte[]{2, (byte) (ix >> 8), (byte) ix, (byte) (iy >> 8), (byte) iy});
+        });
+    }
+
+    public void click(String b, String a) {
+        if (out == null) return;
+        int bb = "r".equals(b) ? 1 : "m".equals(b) ? 2 : 0;
+        int aa = "down".equals(a) ? 1 : "up".equals(a) ? 2 : "dbl".equals(a) ? 3 : 0;
+        byte[] p = {3, (byte) bb, (byte) aa};
+        writer.post(() -> writeInput(p));
+    }
+
+    public void scroll(int dy, int dx) {
+        if ((dx == 0 && dy == 0) || out == null) return;
+        synchronized (inLock) {
+            pendSy += dy; pendSx += dx;
+            if (scrollPosted) return;
+            scrollPosted = true;
+        }
+        writer.post(() -> {
+            int y, x;
+            synchronized (inLock) { y = pendSy; x = pendSx; pendSy = pendSx = 0; scrollPosted = false; }
+            if (x != 0 || y != 0) writeInput(op(4, y, x));
+        });
+    }
+
     public void keys(int... vks) {
         JSONArray a = new JSONArray();
         for (int v : vks) a.put(v);
@@ -316,10 +412,6 @@ public final class Conn {
     public void text(String s) { if (s != null && !s.isEmpty()) send(msg("txt", "s", s)); }
     public void power(String a) { send(msg("power", "a", a)); }
     public void run(String cmd) { send(msg("run", "cmd", cmd)); }
-    public void move(int dx, int dy) { if (dx != 0 || dy != 0) send(msg("mm", "dx", dx, "dy", dy)); }
-    public void moveTo(double x, double y) { send(msg("ma", "x", x, "y", y)); }
-    public void click(String b, String a) { send(msg("mb", "b", b, "a", a)); }
-    public void scroll(int dy, int dx) { if (dy != 0 || dx != 0) send(msg("ms", "dy", dy, "dx", dx)); }
 
     public void sendClipboard(String s) {
         if (s == null || s.equals(lastClip)) return;

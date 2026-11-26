@@ -35,7 +35,10 @@ public final class Discovery {
 
     private Discovery() {}
 
-    public static void find(Context ctx, int timeoutMs, Callback cb) {
+    public static void find(Context ctx, int timeoutMs, Callback cb) { find(ctx, timeoutMs, Prefs.connMode(ctx), cb); }
+
+    /** mode: auto | wifi | hotspot */
+    public static void find(Context ctx, int timeoutMs, String mode, Callback cb) {
         Context app = ctx.getApplicationContext();
         Handler main = new Handler(Looper.getMainLooper());
         new Thread(() -> {
@@ -43,10 +46,10 @@ public final class Discovery {
             try (DatagramSocket s = new DatagramSocket()) {
                 s.setBroadcast(true);
                 java.net.DatagramSocket wifiSock = null;
-                if (Net.wifi(app) != null) { wifiSock = new java.net.DatagramSocket(); wifiSock.setBroadcast(true); Net.bind(app, wifiSock); wifiSock.setSoTimeout(1); }
+                if (!"hotspot".equals(mode) && Net.wifi(app) != null) { wifiSock = new java.net.DatagramSocket(); wifiSock.setBroadcast(true); Net.bind(app, wifiSock); wifiSock.setSoTimeout(1); }
                 s.setSoTimeout(250);
                 byte[] q = "PCREMOTE?".getBytes(StandardCharsets.UTF_8);
-                Set<InetAddress> targets = broadcastAddresses();
+                Set<InetAddress> targets = broadcasts(app, mode);
                 long end = System.currentTimeMillis() + timeoutMs;
                 long nextSend = 0;
                 byte[] buf = new byte[2048];
@@ -65,6 +68,7 @@ public final class Discovery {
                         JSONObject o = new JSONObject(new String(p.getData(), 0, p.getLength(), StandardCharsets.UTF_8));
                         if (!"pc".equals(o.optString("t"))) continue;
                         o.put("ip", p.getAddress().getHostAddress());
+                        o.put("via", rs == wifiSock ? "wifi" : (Net.wifi(app) != null && !"hotspot".equals(mode) && onWifiSubnet(app, p.getAddress()) ? "wifi" : "hotspot"));
                         found.put(o.optString("id"), o);
                     } catch (java.net.SocketTimeoutException ignored) {
                     } catch (Exception ignored) {}
@@ -76,21 +80,48 @@ public final class Discovery {
         }, "discovery").start();
     }
 
-    private static Set<InetAddress> broadcastAddresses() {
+    /** Broadcast addresses to search: the Wi-Fi network, the phone's hotspot, or both (auto). */
+    static Set<InetAddress> broadcasts(Context c, String mode) {
         Set<InetAddress> out = new LinkedHashSet<>();
+        String wifiIf = Net.wifiInterface(c);
         try {
             for (NetworkInterface ni : Collections.list(NetworkInterface.getNetworkInterfaces())) {
                 if (!ni.isUp() || ni.isLoopback()) continue;
                 String n = ni.getName();
-                // skip mobile data interfaces: nothing to find there and we never want to use data
-                if (n.startsWith("rmnet") || n.startsWith("ccmni") || n.startsWith("v4-rmnet") || n.startsWith("dummy")) continue;
+                // skip mobile data: nothing to find there and we never want to use data
+                if (n.startsWith("rmnet") || n.startsWith("ccmni") || n.startsWith("v4-") || n.startsWith("dummy")
+                        || n.startsWith("tun") || n.startsWith("ip6") || n.startsWith("p2p")) continue;
+                boolean isWifiClient = n.equals(wifiIf);
+                if ("wifi".equals(mode) && !isWifiClient) continue;
+                if ("hotspot".equals(mode) && isWifiClient) continue;
                 for (InterfaceAddress ia : ni.getInterfaceAddresses()) {
                     if (ia.getBroadcast() != null) out.add(ia.getBroadcast());
                 }
             }
         } catch (Exception ignored) {}
-        try { out.add(InetAddress.getByName("255.255.255.255")); } catch (Exception ignored) {}
+        if (!"hotspot".equals(mode) && wifiIf != null) {
+            try { out.add(InetAddress.getByName("255.255.255.255")); } catch (Exception ignored) {}
+        }
         return out;
+    }
+
+    private static boolean onWifiSubnet(Context c, InetAddress a) {
+        try {
+            NetworkInterface ni = NetworkInterface.getByName(Net.wifiInterface(c));
+            if (ni == null) return false;
+            for (InterfaceAddress ia : ni.getInterfaceAddresses()) {
+                byte[] x = ia.getAddress().getAddress(), y = a.getAddress();
+                if (x.length != y.length) continue;
+                int bits = ia.getNetworkPrefixLength();
+                boolean same = true;
+                for (int i = 0; i < x.length && bits > 0; i++, bits -= 8) {
+                    int mask = bits >= 8 ? 0xFF : (0xFF << (8 - bits)) & 0xFF;
+                    if ((x[i] & mask) != (y[i] & mask)) { same = false; break; }
+                }
+                if (same) return true;
+            }
+        } catch (Exception ignored) {}
+        return false;
     }
 
     /** Paired Bluetooth computers. Needs the Bluetooth permission on Android 12+. */
@@ -123,37 +154,66 @@ public final class Discovery {
     }
 
     /**
-     * Connects to the most recently used PC that can be reached: first over Wi-Fi/hotspot,
-     * then over Bluetooth. If no remembered PC answers but exactly one new PC does, it uses that one.
-     * Calls back with the PCs that were seen (so the caller can show a picker).
+     * Connects to the most recently used PC using the chosen connection type (Settings / home screen):
+     * auto = Wi-Fi or hotspot first, then Bluetooth. Calls back with the PCs that were seen.
+     * Sets Conn.error with a helpful message when the chosen type isn't available.
      */
     public static void autoConnect(Context c, Callback seen) {
         Conn conn = Conn.get();
-        find(c, 1600, found -> {
+        String mode = Prefs.connMode(c);
+        List<JSONObject> known = Prefs.pcs(c);
+
+        if ("bt".equals(mode)) {
+            if (!hasBtPermission(c)) { conn.error = "Allow Bluetooth for PC Remote first (tap Switch PC)."; seen.onFound(new ArrayList<>()); return; }
+            if (!btOn(c)) { conn.error = "Bluetooth is off. Turn it on to connect."; seen.onFound(new ArrayList<>()); return; }
+            for (JSONObject k : known) if (!k.optString("bt").isEmpty()) { conn.connect(k, "bluetooth"); seen.onFound(new ArrayList<>()); return; }
+            conn.error = "No Bluetooth PC yet. Tap Switch PC and choose your PC under Bluetooth.";
+            seen.onFound(new ArrayList<>());
+            return;
+        }
+        if ("wifi".equals(mode) && Net.wifi(c) == null) {
+            conn.error = "This phone isn't on Wi-Fi. Connect to Wi-Fi, or choose Hotspot / Bluetooth.";
+            seen.onFound(new ArrayList<>());
+            return;
+        }
+        if ("hotspot".equals(mode) && broadcasts(c, "hotspot").isEmpty()) {
+            conn.error = "Your hotspot looks off. Turn it on and connect the PC to it.";
+            seen.onFound(new ArrayList<>());
+            return;
+        }
+
+        find(c, 1600, mode, found -> {
             if (conn.state != Conn.IDLE) { seen.onFound(found); return; }
-            List<JSONObject> known = Prefs.pcs(c);
             for (JSONObject k : known) {
                 for (JSONObject f : found) {
                     if (f.optString("id").equals(k.optString("id"))) {
                         try { f.put("last", k.optLong("last")); if (k.has("bt") && f.optString("bt").isEmpty()) f.put("bt", k.optString("bt")); } catch (Exception ignored) {}
-                        conn.connect(f, "wifi");
+                        conn.connect(f, how(mode, f));
                         seen.onFound(found);
                         return;
                     }
                 }
             }
             if (known.isEmpty() && found.size() == 1) {
-                conn.connect(found.get(0), "wifi");
+                conn.connect(found.get(0), how(mode, found.get(0)));
                 seen.onFound(found);
                 return;
             }
-            if (!known.isEmpty() && found.isEmpty()) {
+            if ("auto".equals(mode) && !known.isEmpty() && found.isEmpty()) {
                 JSONObject last = known.get(0);
-                if (!last.optString("bt").isEmpty() && btOn(c) && hasBtPermission(c)) {
-                    conn.connect(last, "bluetooth");
-                }
+                if (!last.optString("bt").isEmpty() && btOn(c) && hasBtPermission(c)) conn.connect(last, "bluetooth");
             }
+            if (found.isEmpty() && !"auto".equals(mode))
+                conn.error = "hotspot".equals(mode) ? "No PC found on your hotspot. Is the PC connected to it and PC Remote running?"
+                        : "No PC found on this Wi-Fi. Is the PC on the same Wi-Fi and PC Remote running?";
             seen.onFound(found);
         });
+    }
+
+    /** Which link a found PC is on. */
+    public static String how(String mode, JSONObject found) {
+        if ("hotspot".equals(mode)) return "hotspot";
+        if ("wifi".equals(mode)) return "wifi";
+        return "hotspot".equals(found.optString("via")) ? "hotspot" : "wifi";
     }
 }

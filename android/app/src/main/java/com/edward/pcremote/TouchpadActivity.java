@@ -15,65 +15,56 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-/** Touchpad, mouse buttons, air mouse and keyboard. */
+/**
+ * Full-screen touchpad. Keyboard pops up from the ⌨ button.
+ * Tap = click · 2-finger tap = right-click · 3-finger tap = middle-click · 2 fingers = scroll
+ * Tap and hold = pick up (drag) · tap again = drop.
+ */
 public class TouchpadActivity extends BaseActivity implements SensorEventListener {
+    private static final String HINT = "Tap = click  ·  2-finger tap = right-click\n2 fingers = scroll  ·  Hold = pick up, tap again = drop";
+
     private KeyboardBar kb;
     private TextView airBtn, hint;
+    private FrameLayout pad;
     private boolean air;
     private SensorManager sm;
     private Sensor gyro;
     private long lastGyroTs;
     private float airRemX, airRemY;
 
-    // touch state
-    private float lastX, lastY, remX, remY, scrollRem, scrollRemX;
+    private float lastX, lastY, remX, remY, scrollRem, scrollRemX, travel;
     private long downTime;
-    private boolean moved, twoFinger, dragging;
+    private int maxFingers;
+    private boolean holding;   // left button held down (picked up), waiting for a tap to drop
+    private boolean heldThisTouch;
     private float density;
     private final Handler h = new Handler(Looper.getMainLooper());
     private final Runnable longPress = () -> {
-        dragging = true;
-        Ui.haptic(findViewById(android.R.id.content));
+        holding = true;
+        heldThisTouch = true;
+        Ui.haptic(pad);
         conn.click("l", "down");
-        if (hint != null) hint.setText("Dragging… lift your finger to drop");
+        showHolding(true);
     };
 
     @SuppressLint("ClickableViewAccessibility")
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         density = getResources().getDisplayMetrics().density;
-        LinearLayout c = Ui.screen(this, "Mouse & keyboard", false);
-        c.setPadding(Ui.dp(this, 10), Ui.dp(this, 10), Ui.dp(this, 10), 0);
+        LinearLayout c = Ui.screen(this, "Mouse", false);
+        c.setPadding(Ui.dp(this, 10), Ui.dp(this, 10), Ui.dp(this, 10), Ui.dp(this, 10));
+        airBtn = Ui.barButton(this, "✈ Air", v -> setAir(!air));
+        Ui.barButton(this, "⌨ Keyboard", v -> kb.toggle());
 
-        // top tools
-        LinearLayout tools = Ui.hbox(this);
-        TextView kbBtn = Ui.button(this, "⌨  Keyboard", Ui.CARD2, v -> kb.toggle());
-        airBtn = Ui.button(this, "✈  Air mouse", Ui.CARD2, v -> setAir(!air));
-        LinearLayout.LayoutParams t1 = new LinearLayout.LayoutParams(0, -2, 1);
-        t1.setMarginEnd(Ui.dp(this, 8));
-        tools.addView(kbBtn, t1);
-        tools.addView(airBtn, new LinearLayout.LayoutParams(0, -2, 1));
-        c.addView(tools, Ui.lp(-1, -2));
-
-        // pad
-        FrameLayout pad = new FrameLayout(this);
+        pad = new FrameLayout(this);
         pad.setBackground(Ui.round(this, Ui.CARD, 22));
-        hint = Ui.text(this, "Move: 1 finger · Click: tap · Right-click: 2-finger tap\nScroll: 2 fingers · Drag: hold, then move", 13, Ui.MUTED);
+        if (!Ui.night) pad.setElevation(Ui.dp(this, 1.5f));
+        hint = Ui.text(this, HINT, 13, Ui.MUTED);
         hint.setGravity(Gravity.CENTER);
+        hint.setPadding(0, 0, 0, Ui.dp(this, 16));
         pad.addView(hint, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
-        hint.setPadding(0, 0, 0, Ui.dp(this, 14));
-        LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(-1, 0, 1);
-        plp.topMargin = Ui.dp(this, 10);
-        c.addView(pad, plp);
+        c.addView(pad, new LinearLayout.LayoutParams(-1, 0, 1));
         pad.setOnTouchListener((v, e) -> { onPad(e); return true; });
-
-        // buttons
-        LinearLayout btns = Ui.hbox(this);
-        btns.setPadding(0, Ui.dp(this, 10), 0, Ui.dp(this, 10));
-        btns.addView(mouseButton("Left", "l"), lpw(2, true));
-        btns.addView(mouseButton("Middle", "m"), lpw(1, true));
-        btns.addView(mouseButton("Right", "r"), lpw(2, false));
-        c.addView(btns, Ui.lp(-1, Ui.dp(this, 76)));
 
         kb = new KeyboardBar(this);
         kb.setVisibility(View.GONE);
@@ -86,21 +77,10 @@ public class TouchpadActivity extends BaseActivity implements SensorEventListene
         if (getIntent().getBooleanExtra("keyboard", false)) kb.showKeyboard();
     }
 
-    private LinearLayout.LayoutParams lpw(float w, boolean gap) {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -1, w);
-        if (gap) lp.setMarginEnd(Ui.dp(this, 8));
-        return lp;
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private TextView mouseButton(String label, String which) {
-        TextView t = Ui.button(this, label, Ui.CARD2, null);
-        t.setOnTouchListener((v, e) -> {
-            if (e.getAction() == MotionEvent.ACTION_DOWN) { Ui.haptic(v); v.setPressed(true); conn.click(which, "down"); }
-            else if (e.getAction() == MotionEvent.ACTION_UP || e.getAction() == MotionEvent.ACTION_CANCEL) { v.setPressed(false); conn.click(which, "up"); }
-            return true;
-        });
-        return t;
+    private void showHolding(boolean on) {
+        hint.setText(on ? "Holding · move to drag · tap to drop" : HINT);
+        hint.setTextColor(on ? Ui.ACCENT_LIGHT : Ui.MUTED);
+        pad.setBackground(Ui.round(this, on ? Ui.SELECTED : Ui.CARD, 22));
     }
 
     private float speed() { return 0.6f + Prefs.mouseSpeed(this) / 40f; }
@@ -110,26 +90,26 @@ public class TouchpadActivity extends BaseActivity implements SensorEventListene
             case MotionEvent.ACTION_DOWN:
                 lastX = e.getX(); lastY = e.getY();
                 downTime = System.currentTimeMillis();
-                moved = false; twoFinger = false; dragging = false;
+                maxFingers = 1; travel = 0; heldThisTouch = false;
                 remX = remY = scrollRem = scrollRemX = 0;
-                h.postDelayed(longPress, 450);
+                if (!holding) h.postDelayed(longPress, 450);
                 break;
             case MotionEvent.ACTION_POINTER_DOWN:
-                twoFinger = true;
+                maxFingers = Math.max(maxFingers, e.getPointerCount());
                 h.removeCallbacks(longPress);
-                lastX = avgX(e); lastY = avgY(e);
+                lastX = avgX(e, -1); lastY = avgY(e, -1);
                 break;
-            case MotionEvent.ACTION_POINTER_UP:
-                // keep going with the remaining finger without a jump
-                lastX = e.getPointerCount() > 2 ? avgX(e) : e.getX(e.getActionIndex() == 0 ? 1 : 0);
-                lastY = e.getPointerCount() > 2 ? avgY(e) : e.getY(e.getActionIndex() == 0 ? 1 : 0);
+            case MotionEvent.ACTION_POINTER_UP: {
+                int gone = e.getActionIndex();
+                lastX = avgX(e, gone); lastY = avgY(e, gone);
                 break;
+            }
             case MotionEvent.ACTION_MOVE: {
-                float x = e.getPointerCount() > 1 ? avgX(e) : e.getX();
-                float y = e.getPointerCount() > 1 ? avgY(e) : e.getY();
+                float x = avgX(e, -1), y = avgY(e, -1);
                 float dx = (x - lastX) / density, dy = (y - lastY) / density;
                 lastX = x; lastY = y;
-                if (Math.abs(dx) + Math.abs(dy) > 1.2f) { moved = true; if (!dragging) h.removeCallbacks(longPress); }
+                travel += Math.abs(dx) + Math.abs(dy);
+                if (travel > 4f) h.removeCallbacks(longPress);
                 if (e.getPointerCount() >= 2) {
                     float s = (0.5f + Prefs.scrollSpeed(this) / 50f) * 6f;
                     if (Prefs.invertScroll(this)) s = -s;
@@ -137,10 +117,10 @@ public class TouchpadActivity extends BaseActivity implements SensorEventListene
                     scrollRemX += -dx * s;
                     int sy = (int) scrollRem, sx = (int) scrollRemX;
                     scrollRem -= sy; scrollRemX -= sx;
-                    if (Math.abs(sy) > 0 || Math.abs(sx) > 0) conn.scroll(sy, Math.abs(sx) > Math.abs(sy) * 2 ? sx : 0);
+                    if (sy != 0 || sx != 0) conn.scroll(sy, Math.abs(sx) > Math.abs(sy) * 2 ? sx : 0);
                 } else {
                     float v = (float) Math.hypot(dx, dy);
-                    float accel = 1f + Math.min(v, 30f) * 0.09f; // faster flicks travel further
+                    float accel = 1f + Math.min(v, 30f) * 0.09f; // quick flicks travel further
                     remX += dx * speed() * accel * 1.6f;
                     remY += dy * speed() * accel * 1.6f;
                     int mx = (int) remX, my = (int) remY;
@@ -149,35 +129,45 @@ public class TouchpadActivity extends BaseActivity implements SensorEventListene
                 }
                 break;
             }
-            case MotionEvent.ACTION_UP:
-            case MotionEvent.ACTION_CANCEL: {
+            case MotionEvent.ACTION_UP: {
                 h.removeCallbacks(longPress);
                 long dt = System.currentTimeMillis() - downTime;
-                if (dragging) {
-                    conn.click("l", "up");
-                    hint.setText("Move: 1 finger · Click: tap · Right-click: 2-finger tap\nScroll: 2 fingers · Drag: hold, then move");
-                } else if (!moved && e.getActionMasked() == MotionEvent.ACTION_UP && dt < 300) {
-                    conn.click(twoFinger ? "r" : "l", "click");
+                boolean tap = travel < 4f && dt < 300;
+                if (holding && !heldThisTouch) {
+                    if (tap) { conn.click("l", "up"); holding = false; showHolding(false); Ui.haptic(pad); }
+                } else if (!holding && tap) {
+                    conn.click(maxFingers >= 3 ? "m" : maxFingers == 2 ? "r" : "l", "click");
                 }
-                dragging = false;
                 break;
             }
+            case MotionEvent.ACTION_CANCEL:
+                h.removeCallbacks(longPress);
+                break;
         }
     }
 
-    private static float avgX(MotionEvent e) { float s = 0; for (int i = 0; i < e.getPointerCount(); i++) s += e.getX(i); return s / e.getPointerCount(); }
-    private static float avgY(MotionEvent e) { float s = 0; for (int i = 0; i < e.getPointerCount(); i++) s += e.getY(i); return s / e.getPointerCount(); }
+    /** Average finger position, optionally ignoring the finger that is lifting. */
+    private static float avgX(MotionEvent e, int skip) {
+        float s = 0; int n = 0;
+        for (int i = 0; i < e.getPointerCount(); i++) if (i != skip) { s += e.getX(i); n++; }
+        return n == 0 ? e.getX() : s / n;
+    }
+    private static float avgY(MotionEvent e, int skip) {
+        float s = 0; int n = 0;
+        for (int i = 0; i < e.getPointerCount(); i++) if (i != skip) { s += e.getY(i); n++; }
+        return n == 0 ? e.getY() : s / n;
+    }
 
     // ---------------- air mouse ----------------
 
     private void setAir(boolean on) {
         if (on && gyro == null) { Ui.toast(this, "This phone has no gyroscope for air mouse"); return; }
         air = on;
-        Ui.setBg(airBtn, on ? Ui.ACCENT : Ui.CARD2, 14);
-        airBtn.setText(on ? "✈  Air mouse ON" : "✈  Air mouse");
+        airBtn.setText(on ? "✈ Air ON" : "✈ Air");
+        airBtn.setTextColor(on ? Ui.ON : Ui.ACCENT_LIGHT);
         if (on) {
             lastGyroTs = 0;
-            sm.registerListener(this, gyro, SensorManager.SENSOR_DELAY_GAME);
+            sm.registerListener(this, gyro, SensorManager.SENSOR_DELAY_FASTEST);
             Ui.toast(this, "Point and move the phone. Tap the pad to click.");
         } else sm.unregisterListener(this);
     }
@@ -202,6 +192,7 @@ public class TouchpadActivity extends BaseActivity implements SensorEventListene
 
     @Override protected void onPause() {
         if (air) setAir(false);
+        if (holding) { conn.click("l", "up"); holding = false; showHolding(false); }
         super.onPause();
     }
 

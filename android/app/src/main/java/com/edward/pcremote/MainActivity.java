@@ -18,16 +18,23 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class MainActivity extends BaseActivity {
+    private static final String[] MODES = {"auto", "wifi", "hotspot", "bt"};
+    private static final String[] MODE_LABELS = {"Auto", "Wi-Fi", "Hotspot", "Bluetooth"};
+
     private TextView pcName, status, actionBtn, updateBanner;
     private final List<View> tiles = new ArrayList<>();
+    private final TextView[] modeViews = new TextView[MODES.length];
     private static boolean manualDisconnect = false;
     private static boolean searching = false;
     private static long lastUpdateCheck = 0;
     private static boolean pickerShown = false;
+    private boolean night;
 
     @Override protected void onCreate(Bundle b) {
         needsConnection = false;
         super.onCreate(b);
+        night = Ui.night;
+        AppIcons.addPresets(this);
 
         ScrollView sv = new ScrollView(this);
         sv.setFillViewport(true);
@@ -37,9 +44,23 @@ public class MainActivity extends BaseActivity {
         root.setPadding(p, p, p, p);
         sv.addView(root);
 
+        // ---- title row ----
+        LinearLayout top = Ui.hbox(this);
+        TextView title = Ui.text(this, "PC Remote", 24, Ui.TEXT);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        top.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView gear = Ui.text(this, "⚙", 26, Ui.TEXT);
+        gear.setPadding(Ui.dp(this, 10), 0, Ui.dp(this, 4), 0);
+        gear.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
+        top.addView(gear);
+        LinearLayout.LayoutParams tl = Ui.lp(-1, -2);
+        tl.bottomMargin = Ui.dp(this, 12);
+        root.addView(top, tl);
+
         // ---- header card ----
         LinearLayout card = Ui.vbox(this);
         card.setBackground(Ui.round(this, Ui.CARD, 22));
+        if (!Ui.night) card.setElevation(Ui.dp(this, 1.5f));
         card.setPadding(p, p, p, p);
         LinearLayout row = Ui.hbox(this);
         TextView icon = Ui.text(this, "💻", 30, Ui.TEXT);
@@ -54,8 +75,26 @@ public class MainActivity extends BaseActivity {
         row.addView(names, new LinearLayout.LayoutParams(0, -2, 1));
         card.addView(row);
 
+        // connection type
+        TextView ct = Ui.text(this, "Connect using", 12, Ui.MUTED);
+        ct.setPadding(0, Ui.dp(this, 14), 0, Ui.dp(this, 6));
+        card.addView(ct);
+        LinearLayout modes = Ui.hbox(this);
+        for (int i = 0; i < MODES.length; i++) {
+            final String m = MODES[i];
+            TextView o = Ui.text(this, MODE_LABELS[i], 13, Ui.TEXT);
+            o.setGravity(Gravity.CENTER);
+            o.setPadding(Ui.dp(this, 4), Ui.dp(this, 9), Ui.dp(this, 4), Ui.dp(this, 9));
+            o.setOnClickListener(v -> { Ui.haptic(v); setMode(m); });
+            modeViews[i] = o;
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1);
+            if (i < MODES.length - 1) lp.setMarginEnd(Ui.dp(this, 6));
+            modes.addView(o, lp);
+        }
+        card.addView(modes, Ui.lp(-1, -2));
+
         LinearLayout btns = Ui.hbox(this);
-        btns.setPadding(0, Ui.dp(this, 14), 0, 0);
+        btns.setPadding(0, Ui.dp(this, 12), 0, 0);
         TextView sw = Ui.button(this, "⇄  Switch PC", Ui.CARD2, v -> startActivity(new Intent(this, PickerActivity.class)));
         actionBtn = Ui.button(this, "Disconnect", Ui.ACCENT, v -> onAction());
         LinearLayout.LayoutParams l1 = new LinearLayout.LayoutParams(0, -2, 1);
@@ -65,7 +104,7 @@ public class MainActivity extends BaseActivity {
         card.addView(btns);
         root.addView(card, Ui.lp(-1, -2));
 
-        updateBanner = Ui.button(this, "", 0xFF1D4ED8, null);
+        updateBanner = Ui.button(this, "", Ui.ACCENT, null);
         updateBanner.setVisibility(View.GONE);
         LinearLayout.LayoutParams ul = Ui.lp(-1, -2);
         ul.topMargin = Ui.dp(this, 12);
@@ -75,14 +114,12 @@ public class MainActivity extends BaseActivity {
         GridLayout grid = new GridLayout(this);
         grid.setColumnCount(2);
         grid.setPadding(0, Ui.dp(this, 8), 0, 0);
-        addTile(grid, "🖱", "Mouse", TouchpadActivity.class, false);
-        addTile(grid, "⌨", "Keyboard", TouchpadActivity.class, true);
-        addTile(grid, "🎵", "Media", MediaActivity.class, false);
-        addTile(grid, "🖥", "Screen", ScreenActivity.class, false);
-        addTile(grid, "📁", "Files", FilesActivity.class, false);
-        addTile(grid, "⏻", "Power", PowerActivity.class, false);
-        addTile(grid, "⭐", "My buttons", CustomActivity.class, false);
-        addTile(grid, "⚙", "Settings", SettingsActivity.class, false);
+        addTile(grid, "🖱", "Mouse & keyboard", TouchpadActivity.class);
+        addTile(grid, "🖥", "Screen", ScreenActivity.class);
+        addTile(grid, "🎵", "Media", MediaActivity.class);
+        addTile(grid, "📁", "Files", FilesActivity.class);
+        addTile(grid, "⭐", "My buttons & apps", CustomActivity.class);
+        addTile(grid, "⏻", "Power", PowerActivity.class);
         root.addView(grid, Ui.lp(-1, -2));
 
         TextView ver = Ui.text(this, "PC Remote " + Updater.currentVersion(this), 12, Ui.MUTED);
@@ -94,11 +131,11 @@ public class MainActivity extends BaseActivity {
         askPermissions();
     }
 
-    private void addTile(GridLayout grid, String icon, String label, Class<?> cls, boolean keyboard) {
-        boolean always = cls == SettingsActivity.class || cls == CustomActivity.class;
+    private void addTile(GridLayout grid, String icon, String label, Class<?> cls) {
+        boolean always = cls == CustomActivity.class;
         LinearLayout t = Ui.tile(this, icon, label, v -> {
             if (!always && !conn.isConnected()) { Ui.toast(this, "Connect to a PC first"); return; }
-            startActivity(new Intent(this, cls).putExtra("keyboard", keyboard));
+            startActivity(new Intent(this, cls));
         });
         GridLayout.LayoutParams lp = new GridLayout.LayoutParams(GridLayout.spec(GridLayout.UNDEFINED, 1f), GridLayout.spec(GridLayout.UNDEFINED, 1f));
         lp.width = 0;
@@ -107,6 +144,18 @@ public class MainActivity extends BaseActivity {
         lp.setMargins(m, m, m, m);
         grid.addView(t, lp);
         if (!always) tiles.add(t);
+    }
+
+    private void setMode(String m) {
+        if (m.equals(Prefs.connMode(this)) && conn.state != Conn.IDLE) return;
+        Prefs.put(this, "conn_mode", m);
+        if (m.equals("bt") && Build.VERSION.SDK_INT >= 31 && !Discovery.hasBtPermission(this)) {
+            requestPermissions(new String[]{android.Manifest.permission.BLUETOOTH_CONNECT}, 1);
+        }
+        manualDisconnect = false;
+        if (conn.state != Conn.IDLE) conn.disconnect();
+        conn.error = "";
+        search();
     }
 
     private void askPermissions() {
@@ -125,6 +174,7 @@ public class MainActivity extends BaseActivity {
 
     @Override protected void onResume() {
         super.onResume();
+        if (night != Prefs.sp(this).getBoolean("night", false)) { recreate(); return; }
         render();
         if (conn.state == Conn.IDLE && !manualDisconnect) search();
         long now = System.currentTimeMillis();
@@ -142,12 +192,12 @@ public class MainActivity extends BaseActivity {
     private void search() {
         if (searching) return;
         searching = true;
+        conn.error = "";
         render();
         Discovery.autoConnect(this, found -> {
             searching = false;
             if (conn.state == Conn.IDLE && Prefs.pcs(this).isEmpty() && !isFinishing() && !pickerShown) {
                 pickerShown = true;
-                // first time: let the user pick (or see help on how to set up the PC)
                 startActivity(new Intent(this, PickerActivity.class).putExtra("first", true));
             }
             render();
@@ -166,12 +216,18 @@ public class MainActivity extends BaseActivity {
     }
 
     private void render() {
+        String mode = Prefs.connMode(this);
+        for (int i = 0; i < MODES.length; i++) {
+            boolean sel = MODES[i].equals(mode);
+            Ui.setBg(modeViews[i], sel ? Ui.ACCENT : Ui.CARD2, 10);
+            modeViews[i].setTextColor(sel ? Ui.WHITE : Ui.TEXT);
+        }
         JSONObject last = conn.state != Conn.IDLE ? conn.pc : (Prefs.pcs(this).isEmpty() ? null : Prefs.pcs(this).get(0));
         pcName.setText(last == null ? "No PC yet" : last.optString("name", "PC"));
         String s;
         switch (conn.state) {
-            case Conn.CONNECTED: s = "● Connected over " + (conn.isWifi() ? "Wi-Fi" : "Bluetooth"); break;
-            case Conn.CONNECTING: s = "Connecting" + (conn.isWifi() ? "…" : " over Bluetooth…"); break;
+            case Conn.CONNECTED: s = "● Connected over " + conn.transportLabel(); break;
+            case Conn.CONNECTING: s = "Connecting over " + conn.transportLabel() + "…"; break;
             case Conn.WAITING: s = "Click \"Allow\" on the PC to finish connecting"; break;
             default:
                 if (searching) s = "Looking for your PC…";

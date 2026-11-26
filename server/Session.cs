@@ -92,6 +92,10 @@ namespace PCRemote
                             SendSafe(M("error", "msg", ex.Message));
                         }
                     }
+                    else if (type == FrameIO.INPUT && Authorized && p.Length >= 1)
+                    {
+                        FastInput(p);
+                    }
                     else if (type == FrameIO.DATA && Authorized && p.Length >= 4)
                     {
                         int id = (p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3];
@@ -103,6 +107,28 @@ namespace PCRemote
             }
             catch (Exception ex) { if (!(ex is EndOfStreamException || ex is IOException)) Program.Log("session: " + ex.Message); }
             finally { Kill(); }
+        }
+
+        static short S16(byte[] p, int i) => (short)((p[i] << 8) | p[i + 1]);
+        static int U16(byte[] p, int i) => (p[i] << 8) | p[i + 1];
+
+        /// Compact mouse messages: handled straight away with no text parsing (keeps the pointer snappy).
+        void FastInput(byte[] p)
+        {
+            switch (p[0])
+            {
+                case 1: if (p.Length >= 5) Input.MoveBy(S16(p, 1), S16(p, 3)); break;
+                case 2: if (p.Length >= 5) Input.MoveTo(U16(p, 1) / 65535.0, U16(p, 3) / 65535.0); break;
+                case 3:
+                    if (p.Length >= 3)
+                    {
+                        string b = p[1] == 1 ? "r" : p[1] == 2 ? "m" : "l";
+                        string a = p[2] == 1 ? "down" : p[2] == 2 ? "up" : p[2] == 3 ? "dbl" : "click";
+                        Input.Button(b, a);
+                    }
+                    break;
+                case 4: if (p.Length >= 5) Input.Scroll(S16(p, 1), S16(p, 3)); break;
+            }
         }
 
         void Hello(Dictionary<string, object> m)
@@ -208,6 +234,31 @@ namespace PCRemote
                         string cmd = m.S("cmd").Trim();
                         string args = m.S("args");
                         Process.Start(new ProcessStartInfo(Environment.ExpandEnvironmentVariables(cmd), args) { UseShellExecute = true });
+                        break;
+                    }
+
+                // ---- apps (Start menu) ----
+                case "list_apps":
+                    new Thread(() => SendSafe(M("apps", "items", Apps.List().Select(a => a.Name).ToList()))) { IsBackground = true }.Start();
+                    break;
+                case "run_app":
+                    {
+                        var app = Apps.Find(m.S("q"));
+                        if (app == null) SendSafe(M("error", "msg", "Couldn't find \"" + m.S("label", m.S("q")) + "\" on " + Config.Data.Name + ". Is it installed?"));
+                        else Process.Start(new ProcessStartInfo(app.Path) { UseShellExecute = true });
+                        break;
+                    }
+                case "app_icon":
+                    {
+                        string q = m.S("q"), uid = m.S("uid");
+                        var th = new Thread(() =>
+                        {
+                            var app = Apps.Find(q);
+                            string png = app == null ? "" : Apps.IconPng(app.Path, 96);
+                            SendSafe(M("app_icon", "uid", uid, "found", app != null, "name", app?.Name ?? "", "png", png));
+                        }) { IsBackground = true };
+                        th.SetApartmentState(ApartmentState.STA);
+                        th.Start();
                         break;
                     }
 

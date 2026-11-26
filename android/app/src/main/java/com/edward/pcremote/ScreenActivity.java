@@ -32,6 +32,7 @@ public class ScreenActivity extends BaseActivity {
     private final Handler h = new Handler(Looper.getMainLooper());
 
     @Override protected void onCreate(Bundle b) {
+        keepTheme = true;
         super.onCreate(b);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         q = Prefs.screenQuality(this);
@@ -68,7 +69,7 @@ public class ScreenActivity extends BaseActivity {
     }
 
     private TextView barBtn(String s, View.OnClickListener l) {
-        TextView t = Ui.text(this, s, 15, Ui.TEXT);
+        TextView t = Ui.text(this, s, 15, Ui.WHITE);
         t.setPadding(Ui.dp(this, 12), Ui.dp(this, 8), Ui.dp(this, 12), Ui.dp(this, 8));
         t.setOnClickListener(l);
         return t;
@@ -129,8 +130,15 @@ public class ScreenActivity extends BaseActivity {
         private float downX, downY, lastX, lastY, lastSpan, scrollRem;
         private long downT;
         private boolean moved, dragging, multi;
+        private boolean holding, heldThisTouch;
         private final Runnable longPress = () -> {
-            if (!moved && !multi) { sendAt(downX, downY); conn.click("r", "click"); Ui.haptic(this); moved = true; }
+            if (!moved && !multi) {
+                sendAt(downX, downY);
+                conn.click("l", "down");   // picked up: move your finger, then tap to drop
+                holding = true; heldThisTouch = true;
+                Ui.haptic(this);
+                Ui.toast(getContext(), "Picked up · tap where you want to drop it");
+            }
         };
 
         ScreenView(Context c) { super(c); }
@@ -185,7 +193,8 @@ public class ScreenActivity extends BaseActivity {
                     downX = lastX = e.getX(); downY = lastY = e.getY();
                     downT = System.currentTimeMillis();
                     moved = dragging = multi = false;
-                    postDelayed(longPress, 500);
+                    heldThisTouch = false;
+                    if (!holding) postDelayed(longPress, 450);
                     break;
                 case MotionEvent.ACTION_POINTER_DOWN:
                     multi = true;
@@ -217,17 +226,16 @@ public class ScreenActivity extends BaseActivity {
                         if (!moved && Math.hypot(dx, dy) > Ui.dp(getContext(), 8)) {
                             moved = true;
                             removeCallbacks(longPress);
-                            sendAt(downX, downY);
-                            conn.click("l", "down");
-                            dragging = true;
                         }
-                        if (dragging) sendAt(e.getX(), e.getY());
+                        if (moved) sendAt(e.getX(), e.getY()); // the pointer follows your finger
                     }
                     break;
                 case MotionEvent.ACTION_UP:
                     removeCallbacks(longPress);
-                    if (dragging) { sendAt(e.getX(), e.getY()); conn.click("l", "up"); }
-                    else if (!moved && !multi && System.currentTimeMillis() - downT < 500) {
+                    boolean tap = !moved && !multi && System.currentTimeMillis() - downT < 450;
+                    if (holding && !heldThisTouch) {
+                        if (tap) { sendAt(e.getX(), e.getY()); conn.click("l", "up"); holding = false; Ui.haptic(this); }
+                    } else if (!holding && tap) {
                         sendAt(e.getX(), e.getY());
                         conn.click(rightNext ? "r" : "l", "click");
                         rightNext = false;

@@ -1,29 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="AppTheme" parent="android:Theme.Material.NoActionBar">
+    <style name="AppTheme" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:colorPrimary">#2563EB</item>
-        <item name="android:colorPrimaryDark">#0B1220</item>
-        <item name="android:colorAccent">#3B82F6</item>
-        <item name="android:windowBackground">#0F172A</item>
-        <item name="android:statusBarColor">#0B1220</item>
-        <item name="android:navigationBarColor">#0B1220</item>
-        <item name="android:textColorPrimary">#F1F5F9</item>
-        <item name="android:textColorSecondary">#94A3B8</item>
+        <item name="android:colorPrimaryDark">#FFFFFF</item>
+        <item name="android:colorAccent">#2563EB</item>
+        <item name="android:windowBackground">#F3F6FB</item>
+        <item name="android:textColorPrimary">#0F172A</item>
+        <item name="android:textColorSecondary">#64748B</item>
         <item name="android:alertDialogTheme">@style/Dialog</item>
     </style>
-    <style name="AppTheme.Fullscreen">
+    <style name="AppTheme.Night" parent="android:Theme.Material.NoActionBar">
+        <item name="android:colorPrimary">#2563EB</item>
+        <item name="android:colorPrimaryDark">#000000</item>
+        <item name="android:colorAccent">#3B82F6</item>
+        <item name="android:windowBackground">#000000</item>
+        <item name="android:textColorPrimary">#F5F5F5</item>
+        <item name="android:textColorSecondary">#9CA3AF</item>
+        <item name="android:alertDialogTheme">@style/Dialog.Night</item>
+    </style>
+    <style name="AppTheme.Fullscreen" parent="android:Theme.Material.NoActionBar">
+        <item name="android:colorAccent">#3B82F6</item>
         <item name="android:windowBackground">#000000</item>
         <item name="android:windowFullscreen">true</item>
     </style>
-    <style name="AppTheme.Translucent">
+    <style name="AppTheme.Translucent" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:backgroundDimEnabled">false</item>
     </style>
-    <style name="Dialog" parent="android:Theme.Material.Dialog.Alert">
-        <item name="android:colorAccent">#60A5FA</item>
+    <style name="Dialog" parent="android:Theme.Material.Light.Dialog.Alert">
+        <item name="android:colorAccent">#2563EB</item>
         <item name="android:windowBackground">@drawable/dialog_bg</item>
-        <item name="android:textColorPrimary">#F1F5F9</item>
+    </style>
+    <style name="Dialog.Night" parent="android:Theme.Material.Dialog.Alert">
+        <item name="android:colorAccent">#60A5FA</item>
+        <item name="android:windowBackground">@drawable/dialog_bg_night</item>
     </style>
 </resources>

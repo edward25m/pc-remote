@@ -74,7 +74,16 @@ public class RemoteService extends Service {
                 Keys.Action a = Keys.find(this, bar.get(i));
                 if (a == null) { rv.setViewVisibility(ids[i], android.view.View.GONE); continue; }
                 rv.setViewVisibility(ids[i], android.view.View.VISIBLE);
-                rv.setTextViewText(ids[i], a.symbol);
+                if (a.image != null) {
+                    rv.setImageViewBitmap(ids[i], a.image);
+                    rv.setInt(ids[i], "setBackgroundResource", 0);
+                    rv.setViewPadding(ids[i], 4, 4, 4, 4);
+                } else {
+                    rv.setImageViewResource(ids[i], a.icon);
+                    rv.setInt(ids[i], "setBackgroundResource", R.drawable.nbtn_bg);
+                    int pad = Math.round(10 * getResources().getDisplayMetrics().density);
+                    rv.setViewPadding(ids[i], pad, pad, pad, pad);
+                }
                 Intent it = new Intent(this, ActionReceiver.class).setAction("act:" + a.id);
                 rv.setOnClickPendingIntent(ids[i], PendingIntent.getBroadcast(this, 100 + i, it,
                         PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));

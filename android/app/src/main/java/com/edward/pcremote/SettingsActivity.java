@@ -30,6 +30,10 @@ public class SettingsActivity extends BaseActivity {
     private void render() {
         box.removeAllViews();
 
+        box.addView(Ui.section(this, "Look"));
+        box.addView(toggle("Night mode (AMOLED black)", "Pure black screens, easy on the eyes and battery at night",
+                Ui.night, on -> { Prefs.put(this, "night", on); recreate(); }), lp());
+
         box.addView(Ui.section(this, "Notification bar"));
         box.addView(link("Choose buttons", "Media keys, Alt+F4, your own buttons…", () -> startActivity(new Intent(this, NotifBarActivity.class))), lp());
 

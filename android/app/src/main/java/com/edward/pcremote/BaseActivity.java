@@ -16,7 +16,11 @@ public abstract class BaseActivity extends Activity implements Conn.Listener {
     protected boolean needsConnection = true;
     private static long lastClipTs = -1;
 
+    /** Full-screen views (screen, player) keep their black theme. */
+    protected boolean keepTheme = false;
+
     @Override protected void onCreate(Bundle b) {
+        if (keepTheme) Ui.loadColors(this); else Ui.apply(this);
         super.onCreate(b);
         conn = Conn.get();
         conn.init(this);
