@@ -54,12 +54,18 @@ public abstract class BaseActivity extends Activity implements Conn.Listener {
     }
 
     private boolean toldReconnecting;
+    private static boolean blockedShown;
 
     /** Screens that stream something (screen view, file list) restart it here. */
     protected void onReconnected() {}
 
     @Override public void onMessage(String t, JSONObject m) {
         if (t.equals("error")) Ui.toast(this, m.optString("msg"));
+        if (t.equals("blocked") && !isFinishing() && !blockedShown) {
+            blockedShown = true;
+            new android.app.AlertDialog.Builder(this).setTitle("The PC is ignoring the mouse")
+                    .setMessage(m.optString("msg")).setPositiveButton("OK", null).show();
+        }
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent e) {

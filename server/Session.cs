@@ -127,8 +127,19 @@ namespace PCRemote
         static int U16(byte[] p, int i) => (p[i] << 8) | p[i + 1];
 
         /// Compact mouse messages: handled straight away with no text parsing (keeps the pointer snappy).
+        DateTime lastBlockedWarn = DateTime.MinValue;
+
+        void WarnIfBlocked()
+        {
+            if (!Elevation.ForegroundBlocked() || (DateTime.Now - lastBlockedWarn).TotalSeconds < 20) return;
+            lastBlockedWarn = DateTime.Now;
+            SendSafe(M("blocked", "msg", "The app in front on the PC (a game?) runs as administrator, so Windows is ignoring the mouse and keyboard. " +
+                "Fix: on the PC, right-click the PC Remote icon near the clock → Admin mode."));
+        }
+
         void FastInput(byte[] p)
         {
+            WarnIfBlocked();
             switch (p[0])
             {
                 case 1: if (p.Length >= 5) Input.MoveBy(S16(p, 1), S16(p, 3)); break;
@@ -195,8 +206,8 @@ namespace PCRemote
                 case "ma": Input.MoveTo(m.D("x"), m.D("y")); break;
                 case "mb": Input.Button(m.S("b", "l"), m.S("a", "click")); break;
                 case "ms": Input.Scroll(m.I("dy"), m.I("dx")); break;
-                case "txt": Input.Text(m.S("s")); break;
-                case "keys": Input.Combo(m.A("vks").Select(x => Convert.ToInt32(x)).ToList()); break;
+                case "txt": WarnIfBlocked(); Input.Text(m.S("s")); break;
+                case "keys": WarnIfBlocked(); Input.Combo(m.A("vks").Select(x => Convert.ToInt32(x)).ToList()); break;
                 case "kd": Input.KeyDown(m.I("vk")); break;
                 case "ku": Input.KeyUp(m.I("vk")); break;
 

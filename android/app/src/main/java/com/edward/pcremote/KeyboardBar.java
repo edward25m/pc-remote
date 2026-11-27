@@ -54,6 +54,7 @@ public class KeyboardBar {
         inputView.setPadding(p, p, p, p);
         input = new EndEditText(a);
         input.setHint("Type here: it goes straight to the PC");
+        input.setHorizontallyScrolling(false);
         input.setHintTextColor(Ui.MUTED);
         input.setTextColor(Ui.TEXT);
         input.setTextSize(16);
@@ -118,7 +119,20 @@ public class KeyboardBar {
         key(keys, "Ins", Keys.INS);
         key(keys, "Menu", Keys.APPS);
         keysView.setVisibility(View.GONE);
+
+        // When the phone keyboard closes (Back or the down-arrow), close ours too and clear the text box.
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            View decor = a.getWindow().getDecorView();
+            decor.setOnApplyWindowInsetsListener((v, ins) -> {
+                boolean ime = ins.isVisible(android.view.WindowInsets.Type.ime());
+                if (shown && imeWasVisible && !ime) hide();
+                imeWasVisible = ime;
+                return v.onApplyWindowInsets(ins);
+            });
+        }
     }
+
+    private boolean imeWasVisible;
 
     private void typed(String s) {
         if (mods.isEmpty()) { Conn.get().text(s); return; }
@@ -195,6 +209,7 @@ public class KeyboardBar {
         imm.hideSoftInputFromWindow(input.getWindowToken(), 0);
         inputView.setVisibility(View.GONE);
         keysView.setVisibility(View.GONE);
+        clearField(); // the box keeps your text while you type, and starts empty next time
     }
 
     public void toggle() { if (shown) hide(); else show(); }

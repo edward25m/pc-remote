@@ -27,12 +27,15 @@ public class MainActivity extends BaseActivity {
     private static long lastUpdateCheck = 0;
     private static boolean pickerShown = false;
     private boolean night;
+    /** Opening the app goes straight to Mouse & keyboard once connected (Settings can turn this off). */
+    private boolean autoOpen;
 
     @Override protected void onCreate(Bundle b) {
         needsConnection = false;
         super.onCreate(b);
         night = Ui.night;
         AppIcons.addPresets(this);
+        autoOpen = b == null && Prefs.sp(this).getBoolean("auto_mouse", true);
 
         ScrollView sv = new ScrollView(this);
         sv.setFillViewport(true);
@@ -173,6 +176,7 @@ public class MainActivity extends BaseActivity {
         super.onResume();
         if (night != Prefs.sp(this).getBoolean("night", false)) { recreate(); return; }
         render();
+        maybeAutoOpen();
         // Searching and reconnecting run automatically while the app is open (see Watcher).
         if (Prefs.pcs(this).isEmpty() && !pickerShown) {
             new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
@@ -227,7 +231,20 @@ public class MainActivity extends BaseActivity {
         for (View t : tiles) t.setAlpha(conn.isConnected() ? 1f : 0.45f);
     }
 
-    @Override public void onState(int s) { render(); }
+    @Override protected void onNewIntent(Intent i) {
+        super.onNewIntent(i);
+        if (Intent.ACTION_MAIN.equals(i.getAction()) || i.getAction() == null)
+            autoOpen = Prefs.sp(this).getBoolean("auto_mouse", true);
+    }
+
+    private void maybeAutoOpen() {
+        if (autoOpen && conn.isConnected() && !isFinishing()) {
+            autoOpen = false;
+            startActivity(new Intent(this, TouchpadActivity.class));
+        }
+    }
+
+    @Override public void onState(int s) { render(); if (s == Conn.CONNECTED) maybeAutoOpen(); }
 
     @Override public void onMessage(String t, JSONObject m) { }
 }

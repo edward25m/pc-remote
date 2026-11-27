@@ -34,6 +34,10 @@ public class SettingsActivity extends BaseActivity {
         box.addView(toggle("Night mode (AMOLED black)", "Pure black screens, easy on the eyes and battery at night",
                 Ui.night, on -> { Prefs.put(this, "night", on); recreate(); }), lp());
 
+        box.addView(Ui.section(this, "Start-up"));
+        box.addView(toggle("Open Mouse & keyboard straight away", "When you open the app, go to the touchpad as soon as it's connected",
+                Prefs.sp(this).getBoolean("auto_mouse", true), on -> Prefs.put(this, "auto_mouse", on)), lp());
+
         box.addView(Ui.section(this, "Notification bar"));
         box.addView(link("Choose buttons", "Media keys, Alt+F4, your own buttons…", () -> startActivity(new Intent(this, NotifBarActivity.class))), lp());
 

@@ -53,6 +53,8 @@ namespace PCRemote
                 bool firstRun = Array.IndexOf(args, "--firstrun") >= 0;
                 if (firstRun || !Config.Data.FirewallDone) Firewall.Ensure();
 
+                // Stay responsive even when a game is using the whole PC
+                try { Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.AboveNormal; } catch { }
                 Tray = new TrayApp(firstRun, Array.IndexOf(args, "--updated") >= 0);
                 Application.Run(Tray);
             }
