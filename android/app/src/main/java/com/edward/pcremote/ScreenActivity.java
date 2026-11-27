@@ -26,6 +26,7 @@ public class ScreenActivity extends BaseActivity {
 
     private ScreenView view;
     private KeyboardBar kb;
+    private android.widget.HorizontalScrollView quick;
     private TextView fps, qBtn;
     private int q;
     private int frames;
@@ -61,6 +62,10 @@ public class ScreenActivity extends BaseActivity {
         stage.addView(bar, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
 
         root.addView(stage, new LinearLayout.LayoutParams(-1, 0, 1));
+        quick = QuickKeys.row(this);
+        quick.setBackgroundColor(0xFF0B1220);
+        quick.setPadding(Ui.dp(this, 6), 0, Ui.dp(this, 6), Ui.dp(this, 6));
+        root.addView(quick, Ui.lp(-1, -2));
         root.addView(kb.keysView, Ui.lp(-1, -2));
         setContentView(root);
 
@@ -92,6 +97,7 @@ public class ScreenActivity extends BaseActivity {
 
     @Override protected void onResume() {
         super.onResume();
+        QuickKeys.fill(this, (LinearLayout) quick.getChildAt(0));
         conn.frameSink = jpeg -> {
             Bitmap bm = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length);
             conn.send(Conn.msg("fr")); // ask for the next picture straight away
@@ -110,6 +116,7 @@ public class ScreenActivity extends BaseActivity {
     }
 
     @Override protected void onPause() {
+        QuickKeys.releaseNow();
         conn.frameSink = null;
         conn.send(Conn.msg("scr_stop"));
         super.onPause();
@@ -196,6 +203,7 @@ public class ScreenActivity extends BaseActivity {
         @Override public boolean onTouchEvent(MotionEvent e) {
             switch (e.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
+                    QuickKeys.releaseNow();
                     downX = lastX = e.getX(); downY = lastY = e.getY();
                     downT = System.currentTimeMillis();
                     moved = dragging = multi = false;

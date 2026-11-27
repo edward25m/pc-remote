@@ -58,6 +58,7 @@
         <activity android:name=".CustomActivity" />
         <activity android:name=".SettingsActivity" />
         <activity android:name=".NotifBarActivity" />
+        <activity android:name=".QuickKeysActivity" />
         <activity android:name=".PlayerActivity"
             android:configChanges="orientation|screenSize|screenLayout"
             android:theme="@style/AppTheme.Fullscreen" />

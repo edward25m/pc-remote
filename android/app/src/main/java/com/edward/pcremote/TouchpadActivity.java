@@ -24,6 +24,7 @@ public class TouchpadActivity extends BaseActivity implements SensorEventListene
     private static final String HINT = "Tap = click  ·  2-finger tap = right-click\n2 fingers = scroll  ·  Hold = pick up, tap again = drop";
 
     private KeyboardBar kb;
+    private android.widget.HorizontalScrollView quick;
     private TextView airBtn, hint;
     private FrameLayout pad;
     private boolean air;
@@ -67,6 +68,10 @@ public class TouchpadActivity extends BaseActivity implements SensorEventListene
         c.addView(pad, new LinearLayout.LayoutParams(-1, 0, 1));
         pad.setOnTouchListener((v, e) -> { onPad(e); return true; });
 
+        // always-visible quick keys (Alt+Tab, Alt+F4, Win…)
+        quick = QuickKeys.row(this);
+        c.addView(quick, Ui.lp(-1, -2));
+
         // bottom buttons
         LinearLayout bottom = Ui.hbox(this);
         bottom.setPadding(0, Ui.dp(this, 10), 0, 0);
@@ -97,6 +102,7 @@ public class TouchpadActivity extends BaseActivity implements SensorEventListene
     private void onPad(MotionEvent e) {
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
+                QuickKeys.releaseNow(); // touching the pad picks the window when Alt+Tab-ing
                 lastX = e.getX(); lastY = e.getY();
                 downTime = System.currentTimeMillis();
                 maxFingers = 1; travel = 0; heldThisTouch = false;
@@ -200,7 +206,13 @@ public class TouchpadActivity extends BaseActivity implements SensorEventListene
 
     @Override public void onAccuracyChanged(Sensor s, int a) {}
 
+    @Override protected void onResume() {
+        super.onResume();
+        QuickKeys.fill(this, (LinearLayout) quick.getChildAt(0)); // pick up changes from the editor
+    }
+
     @Override protected void onPause() {
+        QuickKeys.releaseNow();
         if (air) setAir(false);
         if (holding) { conn.click("l", "up"); holding = false; showHolding(false); }
         super.onPause();
